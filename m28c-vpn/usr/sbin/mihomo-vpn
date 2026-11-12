@@ -1,0 +1,1037 @@
+#!/bin/sh
+# mihomo-vpn - Mihomo (Clash.Meta) transparent VPN manager for ImmortalWrt
+#
+# A self-contained replacement for the stock VPN stack of the image (nikki / sing-box /
+# xray services), modelled on the mu300-vpn layout of the ZTE F50 backup:
+#   * a profile store under /etc/mihomo-vpn (profiles, subscriptions, settings)
+#   * one active profile, generated config in /run/mihomo-vpn/config.yaml
+#   * TUN device + auto-route + auto-redirect: the router itself and every LAN client
+#     leave through the tunnel, no nftables/iptables rules of our own to maintain
+#   * fake-ip DNS on 127.0.0.1:<dns_port>; dnsmasq forwards to it while the VPN is on
+#   * bypass rules for LAN / private ranges / Tailscale / ZeroTier are re-injected on
+#     every gen, so a subscription refresh can never cut you off from the LAN
+#
+# usage: mihomo-vpn <command> [args]
+#   on | off | restart | toggle        switch the tunnel
+#   status [--json]                    state, profile, exit ip
+#   profile list|use ID|import FILE|URL|- [NAME]|show ID|export ID|remove ID
+#   sub list|add URL [NAME]|update [ID]|remove ID
+#   settings [list | get KEY | set KEY VALUE]
+#   speed [--json]                     real-traffic test of every node (slow, ~1-2 min)
+#   delay [--json]                     quick handshake latency of every node
+#   log [-n LINES]                     tail of the mihomo log
+#   gen | guard | enabled | run | dns-on | dns-off
+set -u
+
+BASE=${MIHOMO_VPN_BASE:-/etc/mihomo-vpn}
+RUN=${MIHOMO_VPN_RUN:-/run/mihomo-vpn}
+BIN=${MIHOMO_VPN_BIN:-/usr/bin/mihomo}
+PROFILES=$BASE/profiles
+SUBS=$BASE/subscriptions
+ACTIVE=$BASE/active
+SETTINGS=$BASE/settings
+LOG=/tmp/mihomo-vpn.log
+SVC=/etc/init.d/mihomo-vpn
+CFG=$RUN/config.yaml
+
+# ---------------------------------------------------------------- store helpers
+q() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
+kv_var() {
+	_v=
+	if [ -r "$2" ]; then
+		while IFS= read -r _l || [ -n "$_l" ]; do
+			case $_l in "$3="*) _v=${_l#*=} ;; esac
+		done <"$2"
+	fi
+	case $_v in
+		"'"*"'")
+			_v=${_v#\'}; _v=${_v%\'}; _r=
+			while :; do
+				case $_v in
+					*"'\\''"*) _r=$_r${_v%%"'\\''"*}"'"; _v=${_v#*"'\\''"} ;;
+					*) break ;;
+				esac
+			done
+			_v=$_r$_v
+			;;
+	esac
+	eval "$1=\$_v"
+}
+
+kv_set() {
+	case $3 in *'
+'*) echo "value cannot contain a newline" >&2; return 2 ;; esac
+	_t=$1.new.$$
+	if ( umask 077; { [ -r "$1" ] && grep -v "^$2=" "$1"; printf '%s=%s\n' "$2" "$(q "$3")"; } >"$_t" ) &&
+		chmod 600 "$_t" && mv "$_t" "$1"; then return 0; fi
+	rm -f "$_t"; return 1
+}
+
+valid_id() { case $1 in ''|*[!a-z0-9_-]*) return 1 ;; esac; [ ${#1} -le 32 ]; }
+slug() { printf '%s' "$1" | tr 'A-Z' 'a-z' | tr -cs 'a-z0-9' '-' | sed 's/^-*//' | cut -c1-32 | sed 's/-*$//'; }
+
+ensure_store() {
+	mkdir -p "$PROFILES" "$SUBS" "$RUN"
+	chmod 700 "$BASE" 2>/dev/null
+	[ -r "$SETTINGS" ] || ( umask 077; : >"$SETTINGS" )
+	# defaults, written once so the LuCI page and the user can see/change them
+	grep -q '^AUTO_OPTIMIZE=' "$SETTINGS" 2>/dev/null || kv_set "$SETTINGS" AUTO_OPTIMIZE '1'
+	grep -q '^OPTIMIZE_EVERY=' "$SETTINGS" 2>/dev/null || kv_set "$SETTINGS" OPTIMIZE_EVERY '0'
+	grep -q '^OPTIMIZE_GROUP=' "$SETTINGS" 2>/dev/null || kv_set "$SETTINGS" OPTIMIZE_GROUP '主代理'
+	grep -q '^OPTIMIZE_HS_WEIGHT=' "$SETTINGS" 2>/dev/null || kv_set "$SETTINGS" OPTIMIZE_HS_WEIGHT '0.3'
+	grep -q '^OPTIMIZE_FILTER=' "$SETTINGS" 2>/dev/null || kv_set "$SETTINGS" OPTIMIZE_FILTER ''
+	grep -q '^ADBLOCK=' "$SETTINGS" 2>/dev/null || kv_set "$SETTINGS" ADBLOCK '1'
+}
+
+# setting KEY [DEFAULT]
+setting() {
+	kv_var _s "$SETTINGS" "$1"
+	[ -n "$_s" ] || _s=${2:-}
+	printf '%s' "$_s"
+}
+
+secret() {
+	_s=$(setting SECRET)
+	if [ -z "$_s" ]; then
+		_s=$(cat /proc/sys/kernel/random/uuid 2>/dev/null | tr -d -)
+		[ -n "$_s" ] || _s=$(printf 'mihomo%s%s' "$(date +%s)" "$$")
+		kv_set "$SETTINGS" SECRET "$_s"
+	fi
+	printf '%s' "$_s"
+}
+
+# ---------------------------------------------------------------- service state
+running_pid() {
+	for p in /proc/[0-9]*; do
+		[ -r "$p/cmdline" ] || continue
+		grep -qa "mihomo" "$p/cmdline" 2>/dev/null || continue
+		grep -qa "$RUN" "$p/cmdline" 2>/dev/null || continue
+		echo "${p##*/}"; return 0
+	done
+	return 1
+}
+
+is_running() { running_pid >/dev/null 2>&1; }
+
+api_get() {
+	curl -sf -m 3 -H "Authorization: Bearer $(secret)" "http://$(setting CONTROLLER 127.0.0.1:9090)$1" 2>/dev/null
+}
+
+uptime_of() {
+	_s=$(cat "$RUN/started" 2>/dev/null)
+	[ -n "${_s:-}" ] || { echo 0; return; }
+	echo $(( $(date +%s) - _s ))
+}
+
+wait_api() {
+	_i=0
+	while [ $_i -lt 24 ]; do
+		api_get /version >/dev/null 2>&1 && return 0
+		sleep 1; _i=$((_i + 1))
+	done
+	return 1
+}
+
+# ---------------------------------------------------------------- dnsmasq integration
+# kept in /etc (not /run) so a reboot cannot lose the user's original upstream servers
+dns_backup=$BASE/dnsmasq.backup
+
+dns_on() {
+	_port=$(setting DNS_PORT 7874)
+	if [ ! -f "$dns_backup" ]; then
+		(
+			umask 077
+			_nr=$(uci -q get dhcp.@dnsmasq[0].noresolv)
+			_srv=$(uci -q get dhcp.@dnsmasq[0].server 2>/dev/null)
+			_own="127.0.0.1#$_port"
+			_rest=$(printf '%s\n' "$_srv" | grep -v -x -F "$_own" | sed '/^$/d')
+			# "noresolv=1 and nothing but our own server" can only be our own doing
+			if [ -z "$_rest" ] && [ "$_nr" = "1" ]; then _nr=; fi
+			{
+				printf 'noresolv=%s\n' "$_nr"
+				printf '%s\n' "$_rest" | sed '/^$/d; s/^/server=/'
+			} >"$dns_backup"
+		)
+	fi
+	uci -q set dhcp.@dnsmasq[0].noresolv='1'
+	uci -q delete dhcp.@dnsmasq[0].server
+	uci -q add_list "dhcp.@dnsmasq[0].server=127.0.0.1#$_port"
+	uci -q commit dhcp
+	/etc/init.d/dnsmasq reload >/dev/null 2>&1
+	logger -t mihomo-vpn "dnsmasq forwards to mihomo dns 127.0.0.1#$_port"
+}
+
+dns_off() {
+	if [ ! -f "$dns_backup" ]; then
+		# no backup (store wiped, or the file was lost): at least stop pointing at a
+		# port that nothing listens on any more
+		_port=$(setting DNS_PORT 7874)
+		_cur=$(uci -q get dhcp.@dnsmasq[0].server 2>/dev/null)
+		if [ "$_cur" = "127.0.0.1#$_port" ]; then
+			uci -q delete dhcp.@dnsmasq[0].server
+			uci -q delete dhcp.@dnsmasq[0].noresolv
+			uci -q commit dhcp
+			/etc/init.d/dnsmasq reload >/dev/null 2>&1
+			logger -t mihomo-vpn "dnsmasq override removed (no backup)"
+		fi
+		return 0
+	fi
+	_nr=$(sed -n 's/^noresolv=//p' "$dns_backup" | head -n1)
+	uci -q delete dhcp.@dnsmasq[0].server
+	sed -n 's/^server=//p' "$dns_backup" | while IFS= read -r _srv; do
+		[ -n "$_srv" ] && uci -q add_list "dhcp.@dnsmasq[0].server=$_srv"
+	done
+	if [ -n "$_nr" ]; then uci -q set dhcp.@dnsmasq[0].noresolv="$_nr"; else uci -q delete dhcp.@dnsmasq[0].noresolv; fi
+	uci -q commit dhcp
+	/etc/init.d/dnsmasq reload >/dev/null 2>&1
+	rm -f "$dns_backup"
+	logger -t mihomo-vpn "dnsmasq restored"
+}
+
+# ---------------------------------------------------------------- config generation
+OWNED='mixed-port port socks-port redir-port tproxy-port allow-lan bind-address mode log-level ipv6 find-process-mode profile sniffer dns tun ntp unified-delay tcp-concurrent external-controller secret external-ui geodata-mode geo-auto-update experimental'
+
+bypass_rules() {
+	cat <<'EOF'
+    - 'IP-CIDR,192.168.0.0/16,DIRECT,no-resolve'
+    - 'IP-CIDR,10.0.0.0/8,DIRECT,no-resolve'
+    - 'IP-CIDR,172.16.0.0/12,DIRECT,no-resolve'
+    - 'IP-CIDR,100.64.0.0/10,DIRECT,no-resolve'
+    - 'IP-CIDR,169.254.0.0/16,DIRECT,no-resolve'
+    - 'IP-CIDR,127.0.0.0/8,DIRECT,no-resolve'
+    - 'IP-CIDR,224.0.0.0/4,DIRECT,no-resolve'
+    - 'IP-CIDR6,fc00::/7,DIRECT,no-resolve'
+    - 'IP-CIDR6,fe80::/10,DIRECT,no-resolve'
+    - 'IP-CIDR6,fd7a:115c:a1e0::/48,DIRECT,no-resolve'
+    - 'DOMAIN-SUFFIX,ts.net,DIRECT'
+    - 'DOMAIN-SUFFIX,tailscale.com,DIRECT'
+    - 'DOMAIN-SUFFIX,tailscale.io,DIRECT'
+    - 'DST-PORT,41641,DIRECT'
+    - 'DST-PORT,3478,DIRECT'
+    - 'DST-PORT,9993,DIRECT'
+EOF
+}
+
+settings_block() {
+	_mp=$(setting MIXED_PORT 7890)
+	_ct=$(setting CONTROLLER 127.0.0.1:9090)
+	_sk=$(secret)
+	_dp=$(setting DNS_PORT 7874)
+	_st=$(setting STACK system)
+	_lv=$(setting LOG_LEVEL info)
+	_mtu=$(setting MTU 1500)
+	cat <<EOF
+mixed-port: $_mp
+allow-lan: true
+bind-address: '*'
+mode: rule
+log-level: $_lv
+ipv6: false
+external-controller: '$_ct'
+secret: '$_sk'
+unified-delay: true
+tcp-concurrent: true
+find-process-mode: 'off'
+profile:
+  store-selected: true
+  store-fake-ip: true
+ntp:
+  enable: false
+dns:
+  enable: true
+  listen: 0.0.0.0:$_dp
+  ipv6: false
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  fake-ip-filter-mode: blacklist
+  prefer-h3: false
+  respect-rules: true
+  use-hosts: false
+  use-system-hosts: false
+  fake-ip-filter: ['*.lan', '*.local', '*.arpa', '*.home.arpa', '*.tailscale.com', '*.tailscale.io', '*.ts.net', 'time.*.com', 'ntp.*.com', 'stun.*.*', '*.stun.*', 'localhost.ptlogin2.qq.com', '*.msftncsi.com', 'www.msftconnecttest.com', '*.srv.nintendo.net', '*.xboxlive.com']
+  default-nameserver: [223.5.5.5, 119.29.29.29]
+  nameserver: ['https://doh.pub/dns-query', 'https://dns.alidns.com/dns-query', 223.5.5.5, 119.29.29.29]
+  direct-nameserver: ['https://doh.pub/dns-query', 'https://dns.alidns.com/dns-query', 223.5.5.5, 119.29.29.29]
+  direct-nameserver-follow-policy: true
+  proxy-server-nameserver: ['https://doh.pub/dns-query', 'https://dns.alidns.com/dns-query', 'tls://223.5.5.5']
+sniffer:
+  enable: true
+  force-dns-mapping: true
+  parse-pure-ip: true
+  override-destination: false
+tun:
+  enable: true
+  stack: $_st
+  auto-route: true
+  auto-redirect: true
+  auto-detect-interface: true
+  strict-route: true
+  dns-hijack: ['any:53']
+  device: Mihomo
+  mtu: $_mtu
+  endpoint-independent-nat: true
+EOF
+}
+
+active_profile() {
+	_p=$(cat "$ACTIVE" 2>/dev/null)
+	[ -n "${_p:-}" ] || _p=$(setting PROFILE)
+	[ -n "${_p:-}" ] || _p=$(ls "$PROFILES" 2>/dev/null | head -n1)
+	printf '%s' "${_p:-}"
+}
+
+ADBLOCK_URL='https://cdn.jsdmirror.com/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/category-ads-all.mrs'
+ADBLOCK_PROVIDER="    AdBlock: { type: http, behavior: domain, format: mrs, url: '$ADBLOCK_URL', path: ./ruleset/AdBlock.mrs, proxy: DIRECT, interval: 86400 }"
+
+# pre-seed the ruleset: the first start of mihomo must not depend on a live download
+ensure_adblock_ruleset() {
+	[ "$(setting ADBLOCK 1)" = "1" ] || return 0
+	mkdir -p "$RUN/ruleset"
+	if [ -s "$RUN/ruleset/AdBlock.mrs" ] && [ $(($(date +%s) - $(date -r "$RUN/ruleset/AdBlock.mrs" +%s 2>/dev/null || echo 0))) -lt 604800 ]; then
+		return 0
+	fi
+	_tmp=$RUN/ruleset/.adblock.$$
+	if curl -fsSL -m 25 -o "$_tmp" "$ADBLOCK_URL" 2>/dev/null && [ -s "$_tmp" ]; then
+		mv "$_tmp" "$RUN/ruleset/AdBlock.mrs"
+	else
+		rm -f "$_tmp"
+		logger -t mihomo-vpn "adblock ruleset download failed, keeping what we have"
+	fi
+}
+
+gen_config() {
+	ensure_store
+	_id=$(active_profile)
+	_src=$PROFILES/$_id/config.yaml
+	if [ -z "$_id" ] || [ ! -s "$_src" ]; then
+		echo "no active profile" >&2
+		return 1
+	fi
+	mkdir -p "$RUN"
+	_ab=$(setting ADBLOCK 1)
+	_t1=$RUN/.cfg1.$$; _t2=$RUN/.cfg2.$$; _bp=$RUN/.bp.$$
+	bypass_rules >"$_bp"
+	# ad blocking: a domain ruleset rejected before anything else goes out
+	[ "$_ab" = "1" ] && echo "    - 'RULE-SET,AdBlock,REJECT'" >>"$_bp"
+	awk -v owned="$OWNED" '
+		BEGIN { n = split(owned, A, " "); for (i = 1; i <= n; i++) skip[A[i]] = 1 }
+		{
+			if ($0 ~ /^[A-Za-z][A-Za-z0-9_-]*:/) {
+				key = $0; sub(/:.*/, "", key); cur = key
+			}
+			if (cur != "" && (cur in skip)) next
+			print
+		}' "$_src" >"$_t1" || { rm -f "$_t1" "$_bp"; return 1; }
+
+	if grep -q '^rules:' "$_t1"; then
+		awk -v bp="$_bp" '
+			$0 ~ /^rules:[ \t]*$/ { print; while ((getline l < bp) > 0) print l; next }
+			{ print }' "$_t1" >"$_t2"
+	else
+		cp "$_t1" "$_t2"
+		{
+			echo 'rules:'
+			cat "$_bp"
+			echo "    - 'MATCH,DIRECT'"
+		} >>"$_t2"
+	fi
+	# the ad ruleset provider: merge into the subscription's own rule-providers when it has one
+	if [ "$_ab" = "1" ]; then
+		if grep -q '^rule-providers:[ \t]*$' "$_t2"; then
+			awk -v p="$ADBLOCK_PROVIDER" '
+				$0 ~ /^rule-providers:[ \t]*$/ { print; print p; next }
+				{ print }' "$_t2" >"$_t2.prov" && mv "$_t2.prov" "$_t2"
+		else
+			{
+				echo 'rule-providers:'
+				echo "$ADBLOCK_PROVIDER"
+			} >>"$_t2"
+		fi
+	fi
+	settings_block >>"$_t2"
+
+	if "$BIN" -t -d "$RUN" -f "$_t2" >"$RUN/.check.log" 2>&1; then
+		mv "$_t2" "$CFG"
+		rm -f "$_t1" "$_bp" "$RUN/.check.log"
+		ensure_adblock_ruleset
+		return 0
+	fi
+	echo "config check failed:" >&2
+	tail -n 20 "$RUN/.check.log" >&2
+	mv "$_t2" "$RUN/config.bad.yaml"
+	rm -f "$_t1" "$_bp" "$RUN/.check.log"
+	return 1
+}
+
+# ---------------------------------------------------------------- run / switch
+cmd_run() {
+	[ -s "$CFG" ] || exit 1
+	date +%s >"$RUN/started"
+	: >"$LOG"
+	exec "$BIN" -d "$RUN" -f "$CFG" >>"$LOG" 2>&1
+}
+
+cmd_on() {
+	ensure_store
+	gen_config || return 1
+	kv_set "$SETTINGS" ENABLED '1'
+	$SVC enable >/dev/null 2>&1
+	$SVC restart >/dev/null 2>&1 || $SVC start >/dev/null 2>&1
+	if wait_api; then
+		dns_on
+		logger -t mihomo-vpn "vpn on (profile $(active_profile))"
+		echo "on"
+	else
+		echo "mihomo did not come up, see mihomo-vpn log" >&2
+		return 1
+	fi
+}
+
+cmd_off() {
+	kv_set "$SETTINGS" ENABLED '0'
+	$SVC stop >/dev/null 2>&1
+	dns_off
+	$SVC disable >/dev/null 2>&1
+	logger -t mihomo-vpn "vpn off"
+	echo "off"
+}
+
+cmd_toggle() { if [ "$(setting ENABLED 0)" = "1" ]; then cmd_off; else cmd_on; fi; }
+
+exit_ip() {
+	# cached for a minute: the LuCI page asks for the status every 15 s
+	_c=$RUN/exit_ip.cache
+	if [ -s "$_c" ]; then
+		_ts=$(sed -n '1p' "$_c"); _v=$(sed -n '2p' "$_c")
+		case $_ts in ''|*[!0-9]*) ;; *) [ $(( $(date +%s) - _ts )) -lt 60 ] && { printf '%s' "$_v"; return 0; } ;; esac
+	fi
+	_mp=$(setting MIXED_PORT 7890)
+	_ip=$(curl -sf -m 6 -x "http://127.0.0.1:$_mp" http://api.ip.sb/ip 2>/dev/null | tr -d ' \r\n')
+	[ -n "${_ip:-}" ] || _ip=$(curl -sf -m 6 -x "http://127.0.0.1:$_mp" http://ifconfig.me/ip 2>/dev/null | tr -d ' \r\n')
+	[ -n "${_ip:-}" ] || _ip=-
+	printf '%s\n%s\n' "$(date +%s)" "$_ip" >"$_c" 2>/dev/null
+	printf '%s' "$_ip"
+}
+
+# ---------------- proxy groups (node selection)
+cmd_groups() {
+	api_get /proxies >"$RUN/.groups.json" 2>/dev/null || { printf '[]\n'; return 0; }
+	jq -c '[ .proxies | to_entries[]
+		| select(.value.type == "Selector" or .value.type == "URLTest" or .value.type == "Fallback" or .value.type == "LoadBalance")
+		| select(.key != "GLOBAL")
+		| select((.key | contains("套餐") or contains("流量") or contains("到期") or contains("官网") or contains("剩余")) | not)
+		| { group: .key, type: .value.type, now: (.value.now // ""), all: (.value.all // []) }
+		| select(.all | length > 1) ]' "$RUN/.groups.json" 2>/dev/null || printf '[]\n'
+	printf '\n'
+	rm -f "$RUN/.groups.json"
+}
+
+cmd_select() {
+	_grp=${1:-}; _node=${2:-}
+	[ -n "$_grp" ] && [ -n "$_node" ] || { echo "usage: select GROUP NODE" >&2; return 2; }
+	_enc=$(printf '%s' "$_grp" | jq -sRr @uri)
+	_b=$(printf '{"name":"%s"}' "$(printf '%s' "$_node" | sed 's/\\/\\\\/g; s/"/\\"/g')")
+	_r=$(curl -s -m 8 -o /dev/null -w '%{http_code}' -X PUT \
+		-H "Authorization: Bearer $(secret)" -H 'Content-Type: application/json' \
+		-d "$_b" "http://$(setting CONTROLLER 127.0.0.1:9090)/proxies/$_enc" 2>/dev/null)
+	case $_r in 204|200) echo "ok" ;; *) echo "failed ($_r)" >&2; return 1 ;; esac
+}
+
+subs_json() {
+	printf '['
+	_first=1
+	for d in "$SUBS"/*; do
+		[ -d "$d" ] || continue
+		_id=${d##*/}
+		_url=$(cat "$d/url" 2>/dev/null | sed 's/"/\\"/g')
+		_upd=$(sed -n 's/^UPDATED=//p' "$d/meta" 2>/dev/null | head -n1 | tr -d "'")
+		[ "$_first" = "1" ] || printf ','
+		_first=0
+		printf '{"id": "%s", "url": "%s", "updated": "%s"}' "$_id" "$_url" "${_upd:-0}"
+	done
+	printf ']'
+}
+
+profiles_json() {
+	printf '['
+	_first=1
+	_act=$(active_profile)
+	for d in "$PROFILES"/*; do
+		[ -d "$d" ] || continue
+		_id=${d##*/}
+		[ -s "$d/config.yaml" ] || continue
+		_n=$(sed -n 's/^NAME=//p' "$d/meta" 2>/dev/null | head -n1 | sed "s/^'//; s/'$//" | sed 's/"/\\"/g')
+		_m=$(sed -n 's/^SUB=//p' "$d/meta" 2>/dev/null | head -n1 | sed "s/^'//; s/'$//")
+		_actf=false; [ "$_id" = "$_act" ] && _actf=true
+		[ "$_first" = "1" ] || printf ','
+		_first=0
+		printf '{"id": "%s", "name": "%s", "sub": "%s", "active": %s}' "$_id" "${_n:-$_id}" "${_m:-}" "$_actf"
+	done
+	printf ']'
+}
+
+cmd_status() {
+	_en=$(setting ENABLED 0)
+	_run=false; is_running && _run=true
+	_id=$(active_profile)
+	_name=$(sed -n 's/^NAME=//p' "$PROFILES/$_id/meta" 2>/dev/null | head -n1 | sed "s/^'//; s/'$//")
+	[ -n "${_name:-}" ] || _name=${_id:-none}
+	_up=$(uptime_of)
+	_ver=$("$BIN" -v 2>/dev/null | head -n1)
+	_ip=-
+	[ "$_run" = "true" ] && _ip=$(exit_ip)
+	_best=$(jq -c . /tmp/mihomo-vpn-optimize.json 2>/dev/null)
+	[ -n "${_best:-}" ] || _best='{}'
+	if [ "${1:-}" = "--json" ] || [ "${1:-}" = "json" ]; then
+		cat <<EOF
+{"enabled": "$_en", "running": $_run, "profile": "${_id:-}", "profile_name": "$_name", "uptime": $_up, "exit_ip": "$_ip", "stack": "$(setting STACK system)", "version": "$_ver", "mixed_port": $(setting MIXED_PORT 7890), "dns_port": $(setting DNS_PORT 7874), "dns_forward": $([ -f "$dns_backup" ] && echo true || echo false), "auto_optimize": "$(setting AUTO_OPTIMIZE 1)", "adblock": "$(setting ADBLOCK 1)", "optimize_every": $(setting OPTIMIZE_EVERY 0), "optimize_filter": "$(setting OPTIMIZE_FILTER '')", "optimize_group": "$(setting OPTIMIZE_GROUP 主代理)", "optimize_hs_weight": $(setting OPTIMIZE_HS_WEIGHT 0.3), "best": $_best, "profiles": $(profiles_json), "subs": $(subs_json)}
+EOF
+		return 0
+	fi
+	echo "profile: ${_name} (${_id:-none})"
+	echo "enabled: $_en"
+	echo "running: $_run"
+	echo "uptime: $_up"
+	echo "exit ip: $_ip"
+	echo "engine: $_ver"
+}
+
+# ---------------- profiles
+profile_use() {
+	_id=${1:-}
+	valid_id "$_id" || { echo "bad profile id" >&2; return 2; }
+	[ -s "$PROFILES/$_id/config.yaml" ] || { echo "no such profile: $_id" >&2; return 1; }
+	printf '%s' "$_id" >"$ACTIVE"
+	kv_set "$SETTINGS" PROFILE "$_id"
+	if [ "$(setting ENABLED 0)" = "1" ]; then
+		gen_config && $SVC restart >/dev/null 2>&1
+	fi
+	echo "$_id"
+}
+
+profile_save() {
+	# profile_save ID NAME TYPE SUB  (config on stdin)
+	_id=$1; _n=$2; _t=$3; _sym=${4:-}
+	valid_id "$_id" || { echo "bad profile id" >&2; return 2; }
+	mkdir -p "$PROFILES/$_id"
+	cat >"$PROFILES/$_id/config.yaml"
+	[ -s "$PROFILES/$_id/config.yaml" ] || { echo "empty config" >&2; return 1; }
+	{
+		printf 'NAME=%s\n' "$(q "$_n")"
+		printf 'TYPE=%s\n' "$(q "$_t")"
+		printf "CREATED='%s'\n" "$(date +%s)"
+		if [ -n "$_sym" ]; then
+			printf "SOURCE='subscription'\nSUB=%s\n" "$(q "$_sym")"
+		else
+			printf "SOURCE='local'\n"
+		fi
+	} >"$PROFILES/$_id/meta"
+	chmod 600 "$PROFILES/$_id/config.yaml" "$PROFILES/$_id/meta"
+}
+
+fetch_url() {
+	curl -fsSL -m 40 -A 'clash.meta mihomo/1.19' "$1"
+}
+
+cmd_profile() {
+	_sub=${1:-}; shift || true
+	case $_sub in
+		list)
+			for d in "$PROFILES"/*; do
+				[ -d "$d" ] || continue
+				_id=${d##*/}
+				_n=$(sed -n 's/^NAME=//p' "$d/meta" 2>/dev/null | head -n1 | sed "s/^'//; s/'$//")
+				_m=$(sed -n 's/^SUB=//p' "$d/meta" 2>/dev/null | head -n1 | sed "s/^'//; s/'$//")
+				printf '%s\t%s\t%s\n' "$_id" "${_n:-$_id}" "${_m:--}"
+			done
+			;;
+		use) profile_use "${1:-}" ;;
+		show)
+			_id=${1:-$(active_profile)}
+			echo "profile: $_id"
+			sed -n '1,20p' "$PROFILES/$_id/meta" 2>/dev/null
+			printf 'proxies: %s\n' "$(grep -cE '^ *- *\{ *name:' "$PROFILES/$_id/config.yaml" 2>/dev/null)"
+			;;
+		export) cat "$PROFILES/${1:-$(active_profile)}/config.yaml" 2>/dev/null ;;
+		import)
+			_src=${1:-}; [ -n "$_src" ] || { echo "usage: profile import FILE|URL|- [NAME]" >&2; return 2; }
+			_n=${2:-}
+			_tmp=$RUN/.import.$$
+			case $_src in
+				-|/dev/stdin) cat >"$_tmp" ;;
+				http://*|https://*) fetch_url "$_src" >"$_tmp" || { rm -f "$_tmp"; echo "download failed" >&2; return 1; } ;;
+				*) cp "$_src" "$_tmp" 2>/dev/null || { rm -f "$_tmp"; echo "cannot read $_src" >&2; return 1; } ;;
+			esac
+			[ -s "$_tmp" ] || { rm -f "$_tmp"; echo "empty input" >&2; return 1; }
+			[ -n "$_n" ] || _n=$(sed -n 's/^# *//p' "$_tmp" | head -n1)
+			_id=$(slug "${_n:-import}"); [ -n "$_id" ] || _id=import
+			profile_save "$_id" "${_n:-$_id}" mihomo <"$_tmp" || { rm -f "$_tmp"; return 1; }
+			rm -f "$_tmp"
+			profile_use "$_id" >/dev/null
+			echo "$_id"
+			;;
+		remove)
+			_id=${1:-}; valid_id "$_id" || return 2
+			rm -rf "$PROFILES/$_id"
+			echo "removed $_id"
+			;;
+		*) echo "usage: mihomo-vpn profile list|use|show|export|import|remove" >&2; return 2 ;;
+	esac
+}
+
+# ---------------- subscriptions
+cmd_sub() {
+	_action=${1:-}; shift || true
+	case $_action in
+		list)
+			for d in "$SUBS"/*; do
+				[ -d "$d" ] || continue
+				printf '%s\t%s\t%s\n' "${d##*/}" "$(cat "$d/url" 2>/dev/null)" "$(sed -n 's/^UPDATED=//p' "$d/meta" 2>/dev/null | tr -d "'")"
+			done
+			;;
+		add)
+			_url=${1:-}; _n=${2:-}
+			case $_url in http://*|https://*) ;; *) echo "usage: sub add URL [NAME]" >&2; return 2 ;; esac
+			[ -n "$_n" ] || _n=$(printf '%s' "$_url" | sed 's#^https\?://##; s#[/:?].*##' | cut -c1-20)
+			_id=$(slug "$_n"); [ -n "$_id" ] || _id=sub
+			mkdir -p "$SUBS/$_id"
+			printf '%s' "$_url" >"$SUBS/$_id/url"
+			_tmp=$RUN/.sub.$$
+			fetch_url "$_url" >"$_tmp" || { rm -f "$_tmp"; echo "download failed" >&2; return 1; }
+			profile_save "$_id" "${_n:-$_id}" mihomo "$_id" <"$_tmp" || { rm -f "$_tmp"; return 1; }
+			rm -f "$_tmp"
+			{ printf 'NAME=%s\nTYPE=auto\n' "$(q "${_n:-$_id}")"; printf "UPDATED='%s'\n" "$(date +%s)"; } >"$SUBS/$_id/meta"
+			profile_use "$_id" >/dev/null
+			echo "$_id"
+			;;
+		update)
+			_only=${1:-}
+			for d in "$SUBS"/*; do
+				[ -d "$d" ] || continue
+				_id=${d##*/}
+				[ -n "$_only" ] && [ "$_only" != "$_id" ] && continue
+				_url=$(cat "$d/url" 2>/dev/null)
+				[ -n "$_url" ] || continue
+				_tmp=$RUN/.sub.$$
+				if fetch_url "$_url" >"$_tmp" && [ -s "$_tmp" ]; then
+					_n=$(sed -n 's/^NAME=//p' "$d/meta" | head -n1 | sed "s/^'//; s/'$//")
+					profile_save "$_id" "${_n:-$_id}" mihomo "$_id" <"$_tmp"
+					{ printf 'NAME=%s\nTYPE=auto\n' "$(q "${_n:-$_id}")"; printf "UPDATED='%s'\n" "$(date +%s)"; } >"$d/meta"
+					echo "updated $_id"
+				else
+					echo "failed $_id" >&2
+				fi
+				rm -f "$_tmp"
+			done
+			if [ "$(setting ENABLED 0)" = "1" ]; then gen_config && $SVC restart >/dev/null 2>&1; fi
+			;;
+		remove)
+			_id=${1:-}; valid_id "$_id" || return 2
+			rm -rf "$SUBS/$_id"
+			echo "removed $_id"
+			;;
+		*) echo "usage: mihomo-vpn sub list|add|update|remove" >&2; return 2 ;;
+	esac
+}
+
+cmd_settings() {
+	_a=${1:-list}
+	case $_a in
+		list) sed -n '1,200p' "$SETTINGS" 2>/dev/null ;;
+		get) kv_var _v "$SETTINGS" "${2:-}"; printf '%s\n' "$_v" ;;
+		set)
+			_k=${2:-}; _v=${3:-}
+			[ -n "$_k" ] || return 2
+			kv_set "$SETTINGS" "$_k" "$_v" && echo "$_k=$_v"
+			;;
+		*) return 2 ;;
+	esac
+}
+
+# ---------------- speed test (real traffic, temporary mihomo with one listener per node)
+cmd_speed() {
+	_apiport=19090
+	_d=$RUN/speed.$$
+	mkdir -p "$_d" || return 1
+	trap 'kill ${_pid:-0} 2>/dev/null; rm -rf "$_d"' EXIT INT TERM
+
+	awk '/^proxies:[ \t]*$/{f=1;next} /^[A-Za-z][A-Za-z0-9_-]*:/{f=0} f' "$CFG" 2>/dev/null |
+		grep -E '^ *- *\{ *name: ' | grep -vE '官网|剩余流量|距离下次|套餐到期' >"$_d/raw"
+	[ -s "$_d/raw" ] || { rm -rf "$_d"; printf '[]\n'; return 0; }
+
+	awk '{ line=$0; t=$0; sub(/^ *- *\{ *name: */,"",t); sub(/,.*/,"",t);
+	       sub(/name: [^,]*,/,"name: p" NR ",",line); print NR "|" t > (d "/map"); print line }' \
+		d="$_d" "$_d/raw" >"$_d/proxies"
+
+	{
+		echo "allow-lan: false"
+		echo "mode: rule"
+		echo "log-level: silent"
+		echo "external-controller: 127.0.0.1:$_apiport"
+		echo "proxies:"
+		cat "$_d/proxies"
+		echo "listeners:"
+		awk -F'|' '{ printf "  - { name: l%s, type: http, port: %d, listen: 127.0.0.1, proxy: p%s }\n", $1, 18000+$1, $1 }' "$_d/map"
+		echo "rules:"
+		echo "  - MATCH,DIRECT"
+	} >"$_d/config.yaml"
+
+	"$BIN" -d "$_d" -f "$_d/config.yaml" >"$_d/mihomo.log" 2>&1 &
+	_pid=$!
+	_i=0
+	while [ $_i -lt 24 ]; do
+		curl -s -m 1 "http://127.0.0.1:$_apiport/version" >/dev/null 2>&1 && break
+		sleep 1; _i=$((_i + 1))
+	done
+
+	awk -F'|' -v d="$_d" -v k=8 '{ print $0 > (d "/c." ($1 % k)) }' "$_d/map"
+	_bp=
+	for f in "$_d"/c.*; do
+		[ -f "$f" ] || continue
+		(
+			while IFS='|' read -r id name; do
+				[ -n "$id" ] || continue
+				real=$(curl -s -o /dev/null -w '%{http_code}|%{time_total}' --max-time 8 \
+					-x "http://127.0.0.1:$((18000 + id))" http://www.gstatic.com/generate_204 2>/dev/null)
+				rc=$(printf '%s' "$real" | cut -d'|' -f1)
+				rt=$(printf '%s' "$real" | cut -d'|' -f2)
+				rms=$(awk -v t="$rt" 'BEGIN{printf "%d", t*1000}' 2>/dev/null)
+				case "$rc" in 200|204|301|302|303|307|308) ok=1 ;; *) ok=0; rms=0 ;; esac
+				r=$(curl -s -m 6 "http://127.0.0.1:$_apiport/proxies/p$id/delay?url=http%3A%2F%2Fwww.gstatic.com%2Fgenerate_204&timeout=4000" 2>/dev/null)
+				hs=$(printf '%s' "$r" | sed -n 's/.*"delay":\([0-9][0-9]*\).*/\1/p')
+				[ -n "$hs" ] || hs=0
+				if [ "$ok" = "1" ]; then score=$rms; else score=999999; fi
+				printf '%s|%s|%s|%s|%s|%s\n' "$score" "$ok" "$hs" "$rms" "$id" "$name" >>"$_d/res.$id"
+			done <"$f"
+		) &
+		_bp="$_bp $!"
+	done
+	for b in $_bp; do wait "$b" 2>/dev/null; done
+	kill "$_pid" 2>/dev/null; wait "$_pid" 2>/dev/null
+
+	cat "$_d"/res.* 2>/dev/null | sort -t'|' -k1,1n -k3,3n >"$_d/sorted"
+	awk -F'|' 'BEGIN{printf "["} {score=$1; ok=$2; hs=$3; real=$4; id=$5; name=$6;
+		gsub(/"/,"",name);
+		if (score>=999999) sq="null"; else sq=score;
+		if (ok=="1") { oj="true"; rj=(real>0)?real:"null" } else { oj="false"; rj="null" }
+		if (hs>0) hj=hs; else hj="null";
+		printf "%s{\"id\":\"p%s\",\"name\":\"%s\",\"hs\":%s,\"real\":%s,\"ok\":%s,\"score\":%s}", (cnt++?",":""), id, name, hj, rj, oj, sq }
+		END{printf "]"}' "$_d/sorted"
+	printf '\n'
+	rm -rf "$_d"
+	trap - EXIT INT TERM
+}
+
+cmd_delay() {
+	_sk=$(secret); _ct=$(setting CONTROLLER 127.0.0.1:9090)
+	_d=$RUN/delay.$$
+	mkdir -p "$_d" || { printf '[]\n'; return 0; }
+	trap 'rm -rf "$_d"' EXIT INT TERM
+	api_get /proxies >"$_d/proxies.json" || { rm -rf "$_d"; printf '[]\n'; return 0; }
+	jq -r '.proxies | to_entries[]
+		| select(.value.type != "Selector" and .value.type != "URLTest" and .value.type != "Fallback"
+			and .value.type != "LoadBalance" and .value.type != "Direct" and .value.type != "Reject"
+			and .value.type != "RejectDrop" and .value.type != "Pass" and .value.type != "Compatible")
+		| .key' "$_d/proxies.json" 2>/dev/null | grep -vE '官网|剩余流量|距离下次|套餐到期' >"$_d/names"
+	[ -s "$_d/names" ] || { rm -rf "$_d"; printf '[]\n'; return 0; }
+
+	# sixteen workers, so a few unreachable nodes cannot stall the whole list
+	awk -v d="$_d" -v k=16 '{ print > (d "/w." (NR % k)) }' "$_d/names"
+	_bp=
+	_i=0
+	for f in "$_d"/w.*; do
+		[ -f "$f" ] || continue
+		(
+			while IFS= read -r name; do
+				[ -n "$name" ] || continue
+				_enc=$(printf '%s' "$name" | jq -sRr @uri)
+				r=$(curl -s -m 5 -H "Authorization: Bearer $_sk" \
+					"http://$_ct/proxies/$_enc/delay?url=http%3A%2F%2Fwww.gstatic.com%2Fgenerate_204&timeout=4000" 2>/dev/null)
+				dl=$(printf '%s' "$r" | sed -n 's/.*"delay":\([0-9][0-9]*\).*/\1/p')
+				[ -n "$dl" ] && [ "$dl" -gt 0 ] && printf '%s|%s\n' "$dl" "$name"
+			done <"$f"
+		) >"$_d/out.$_i" &
+		_bp="$_bp $!"
+		_i=$((_i + 1))
+	done
+	for b in $_bp; do wait "$b" 2>/dev/null; done
+	cat "$_d"/out.* 2>/dev/null >"$_d/all"
+	sort -t'|' -k1,1n "$_d/all" 2>/dev/null |
+		awk -F'|' 'BEGIN{printf "["} NF>1 {gsub(/"/,"",$2); printf "%s{\"name\":\"%s\",\"delay\":%s}", (c++?",":""), $2, $1} END{printf "]"}' >"$_d/json"
+	printf '\n' >>"$_d/json"
+	cat "$_d/json"
+	rm -rf "$_d"
+	trap - EXIT INT TERM
+}
+
+# background node tests: the browser must not hold a request open for two minutes
+cmd_test() {
+	_kind=${1:-speed}; _act=${2:-result}
+	_out=/tmp/mihomo-vpn-$_kind.json
+	_lock=$RUN/$_kind.lock
+	case $_act in
+		start)
+			case $_kind in speed|delay) ;; *) echo '{"error":"kind must be speed or delay"}'; return 2 ;; esac
+			# a lock older than five minutes belongs to a run that died without cleaning up
+			if [ -f "$_lock" ]; then
+				_ts=$(cat "$_lock" 2>/dev/null)
+				case $_ts in ''|*[!0-9]*) rm -f "$_lock" ;; *)
+					[ $(( $(date +%s) - _ts )) -gt 300 ] && rm -f "$_lock" ;;
+				esac
+			fi
+			[ -f "$_lock" ] && { echo '{"running":true}'; return 0; }
+			[ "$(setting ENABLED 0)" = "1" ] || { echo '{"error":"vpn off"}'; return 0; }
+			date +%s >"$_lock"
+			rm -f "$_out"
+			nohup sh -c "/usr/sbin/mihomo-vpn $_kind >'$_out.tmp' 2>/dev/null; mv '$_out.tmp' '$_out'; rm -f '$_lock'" >/dev/null 2>&1 &
+			echo '{"running":true}'
+			;;
+		result)
+			if [ -f "$_lock" ]; then
+				_ts=$(cat "$_lock" 2>/dev/null)
+				case $_ts in ''|*[!0-9]*) rm -f "$_lock" ;; *)
+					[ $(( $(date +%s) - _ts )) -gt 300 ] && rm -f "$_lock" ;;
+				esac
+			fi
+			if [ -f "$_lock" ]; then
+				echo '{"running":true}'
+			elif [ -s "$_out" ]; then
+				cat "$_out"
+			else
+				echo '[]'
+			fi
+			;;
+		*) echo '{"error":"usage: test speed|delay start|result"}'; return 2 ;;
+	esac
+}
+
+# ---------------- automatic node optimization
+# Runs the real-traffic test, ranks every usable node by a combined score
+#   score = (1 - w) * real_request_ms + w * handshake_ms      (w = OPTIMIZE_HS_WEIGHT)
+# and points the chosen proxy group at the winner. Used at boot, on uplink up and
+# periodically from cron, and by the "立即优化" button in LuCI.
+#   optimize            run now (blocking, ~45 s), prints the result as JSON
+#   optimize start      run in the background, the browser polls optimize result
+#   optimize result     {"running":true} or the last result
+#   autoopt             only run when AUTO_OPTIMIZE=1 and the last run is older than OPTIMIZE_EVERY
+cmd_optimize() {
+	_act=${1:-now}
+	_out=/tmp/mihomo-vpn-optimize.json
+	_lock=$RUN/optimize.lock
+
+	case $_act in
+		start)
+			if [ -f "$_lock" ]; then
+				_ts=$(cat "$_lock" 2>/dev/null)
+				case $_ts in ''|*[!0-9]*) rm -f "$_lock" ;; *) [ $(( $(date +%s) - _ts )) -gt 600 ] && rm -f "$_lock" ;; esac
+			fi
+			[ -f "$_lock" ] && { echo '{"running":true}'; return 0; }
+			date +%s >"$_lock"
+			nohup sh -c "/usr/sbin/mihomo-vpn optimize >'$_out.tmp' 2>/dev/null; mv '$_out.tmp' '$_out'; rm -f '$_lock'" >/dev/null 2>&1 &
+			echo '{"running":true}'
+			return 0
+			;;
+		result)
+			if [ -f "$_lock" ]; then echo '{"running":true}'
+			elif [ -s "$_out" ]; then cat "$_out"
+			else echo '{}'; fi
+			return 0
+			;;
+	esac
+
+	[ "$(setting ENABLED 0)" = "1" ] || { echo '{"error":"vpn off"}'; return 1; }
+	is_running || { echo '{"error":"mihomo not running"}'; return 1; }
+	[ "$(exit_ip)" != "-" ] || { echo '{"error":"tunnel not working yet"}'; return 1; }
+	rm -f "$RUN/exit_ip.cache"
+
+	_grp=$(setting OPTIMIZE_GROUP 主代理)
+	_w=$(setting OPTIMIZE_HS_WEIGHT 0.3)
+	_secret=$(secret); _ct=$(setting CONTROLLER 127.0.0.1:9090)
+
+	# real-traffic test of every node (temporary mihomo, does not disturb the tunnel)
+	_list=$(/usr/sbin/mihomo-vpn speed 2>/dev/null)
+	case "$_list" in \[*\]) ;; *) echo '{"error":"speed test failed"}'; return 1 ;; esac
+
+	# optional candidate filter: only nodes whose name contains one of the keywords
+	# (OPTIMIZE_FILTER="香港 日本" -> only those nodes compete)
+	_filter=$(setting OPTIMIZE_FILTER '')
+	if [ -n "$_filter" ]; then
+		_kws=$(printf '%s' "$_filter" | tr ',' ' ' | tr -s ' ' '\n' | sed '/^$/d' | jq -R . | jq -s -c .)
+		_list=$(printf '%s' "$_list" | jq -c --argjson kws "$_kws" '
+			[ .[] | select(.name as $n | any($kws[]; $n | contains(.))) ]' 2>/dev/null)
+		case "$_list" in \[*\]) ;; *) _list='[]' ;; esac
+		if [ "$(printf '%s' "$_list" | jq 'length')" = "0" ]; then
+			logger -t mihomo-vpn "optimize: no node matches filter '$_filter'"
+			printf '{"error":"no node matches filter: %s"}\n' "$_filter"
+			return 1
+		fi
+	fi
+
+	# the group we are allowed to steer: the configured one, else the biggest selector
+	_groups=$(/usr/sbin/mihomo-vpn groups 2>/dev/null)
+	_grp=$(printf '%s' "$_groups" | jq -r --arg g "$_grp" '.[] | select(.group == $g) | .group' 2>/dev/null | head -n1)
+	[ -n "$_grp" ] || _grp=$(printf '%s' "$_groups" | jq -r '[ .[] | select(.type == "Selector") | select(.all | length > 3) ][0].group // empty' 2>/dev/null)
+	[ -n "$_grp" ] || { echo '{"error":"no selector group found"}'; return 1; }
+
+	# a node whose handshake could not be measured must not win by having "0 ms":
+	# its handshake term falls back to its real request time (neutrally penalised)
+	_best=$(printf '%s' "$_list" | jq -r --argjson w "$_w" '
+		[ .[] | select(.ok == true and .real != null)
+		  | . + { score: ( (.real * (1 - $w)) + (((if ((.hs // 0) > 0) then .hs else .real end)) * $w) ) } ]
+		| sort_by(.score) | .[0] // empty
+		| "\(.name)\t\(.score | floor)\t\(.hs // 0)\t\(.real)"' 2>/dev/null | head -n1)
+	_ok=$(printf '%s' "$_list" | jq '[ .[] | select(.ok == true) ] | length' 2>/dev/null)
+	_all=$(printf '%s' "$_list" | jq 'length' 2>/dev/null)
+
+	if [ -z "$_best" ]; then
+		logger -t mihomo-vpn "optimize: no usable node ($_all tested)"
+		printf '{"error":"no usable node","tested":%s,"ok":0}\n' "${_all:-0}"
+		return 1
+	fi
+
+	_name=$(printf '%s' "$_best" | cut -f1)
+	_score=$(printf '%s' "$_best" | cut -f2)
+	_hs=$(printf '%s' "$_best" | cut -f3)
+	_real=$(printf '%s' "$_best" | cut -f4)
+	_enc=$(printf '%s' "$_grp" | jq -sRr @uri)
+	_body=$(jq -cn --arg n "$_name" '{name: $n}')
+	_rc=$(curl -s -m 8 -o /dev/null -w '%{http_code}' -X PUT \
+		-H "Authorization: Bearer $_secret" -H 'Content-Type: application/json' \
+		-d "$_body" "http://$_ct/proxies/$_enc" 2>/dev/null)
+	logger -t mihomo-vpn "optimize: $_grp -> $_name (score $_score, hs ${_hs}ms, real ${_real}ms, $_ok/$_all usable, http $_rc)"
+
+	printf '{"ts":%s,"group":"%s","node":"%s","score":%s,"hs":%s,"real":%s,"ok":%s,"tested":%s,"http":"%s"}\n' \
+		"$(date +%s)" "$_grp" "$(printf '%s' "$_name" | sed 's/"/\\"/g')" "$_score" "$_hs" "$_real" "${_ok:-0}" "${_all:-0}" "$_rc"
+}
+
+# cron entry point: respect AUTO_OPTIMIZE and the refresh interval
+#   autoopt         periodic: run when the last optimization is older than OPTIMIZE_EVERY
+#   autoopt force   after an uplink came back: only respect OPTIMIZE_MIN_GAP
+cmd_autoopt() {
+	[ "$(setting AUTO_OPTIMIZE 1)" = "1" ] || return 0
+	[ "$(setting ENABLED 0)" = "1" ] || return 0
+	is_running || return 0
+	# boot-only by default: OPTIMIZE_EVERY=0 means "never from cron, only at boot"
+	_every=$(setting OPTIMIZE_EVERY 0)
+	case $_every in ''|*[!0-9]*) _every=0 ;; esac
+	[ "$_every" -gt 0 ] || return 0
+	[ "$(exit_ip)" != "-" ] || return 0
+
+	if [ "${1:-}" = "force" ]; then
+		_every=$(setting OPTIMIZE_MIN_GAP 1800)
+		case $_every in ''|*[!0-9]*) _every=1800 ;; esac
+	fi
+	_last=$(sed -n 's/.*"ts":\([0-9][0-9]*\).*/\1/p' /tmp/mihomo-vpn-optimize.json 2>/dev/null | head -n1)
+	[ -n "$_last" ] || _last=0
+	[ $(( $(date +%s) - _last )) -lt "$_every" ] && return 0
+	[ -f "$RUN/optimize.lock" ] && return 0
+	[ -f "$RUN/speed.lock" ] && return 0
+
+	logger -t mihomo-vpn "autoopt: starting node optimization ($( [ "${1:-}" = force ] && echo 'uplink came back' || echo 'scheduled'))"
+	/usr/sbin/mihomo-vpn optimize start >/dev/null 2>&1
+}
+
+cmd_log() {
+	_n=60
+	[ "${1:-}" = "-n" ] && _n=${2:-60}
+	tail -n "$_n" "$LOG" 2>/dev/null
+}
+
+# ad blocking: mihomo rejects the domains of the category-ads-all ruleset
+cmd_adblock() {
+	_a=${1:-status}
+	case $_a in
+		on|off)
+			kv_set "$SETTINGS" ADBLOCK "$( [ "$_a" = on ] && echo 1 || echo 0 )"
+			gen_config >/dev/null 2>&1 || { echo "config generation failed" >&2; return 1; }
+			if [ "$(setting ENABLED 0)" = "1" ]; then
+				$SVC restart >/dev/null 2>&1
+				wait_api && dns_on
+			fi
+			logger -t mihomo-vpn "adblock $_a"
+			echo "$_a"
+			;;
+		status) setting ADBLOCK 1; echo ;;
+		*) echo "usage: adblock on|off|status" >&2; return 2 ;;
+	esac
+}
+
+# watchdog, run from cron: the process alive is not enough, the controller and the
+# data path must work too. Two consecutive failures in a row are needed to restart.
+cmd_health() {
+	[ "$(setting ENABLED 0)" = "1" ] || return 0
+	_f=$RUN/health.fail
+	if is_running && api_get /version >/dev/null 2>&1 && [ "$(exit_ip)" != "-" ]; then
+		rm -f "$_f"
+		return 0
+	fi
+	_n=$(cat "$_f" 2>/dev/null); _n=$(( ${_n:-0} + 1 ))
+	printf '%s' "$_n" >"$_f"
+	[ "$_n" -ge 2 ] || return 0
+	rm -f "$_f"
+	logger -t mihomo-vpn "health check failed twice, restarting"
+	# the pinned node may be dead: fall back to the auto group right away so traffic
+	# recovers. No automatic re-test here: optimization runs at boot or when asked.
+	_grp=$(setting OPTIMIZE_GROUP 主代理)
+	_auto=$(/usr/sbin/mihomo-vpn groups 2>/dev/null | jq -r '.[] | select(.group == "自动选择" or .type == "URLTest") | .group' | head -n1)
+	[ -n "$_auto" ] && /usr/sbin/mihomo-vpn select "$_grp" "$_auto" >/dev/null 2>&1
+	$SVC restart >/dev/null 2>&1 || $SVC start >/dev/null 2>&1
+	wait_api && dns_on
+}
+
+cmd_guard() {
+	[ "$(setting ENABLED 0)" = "1" ] || return 0
+	gen_config >/dev/null 2>&1 || return 1
+	# fw4 reloading does not necessarily destroy our table: only restart mihomo when
+	# the tunnel is really gone (process, controller, or the nft redirect rules)
+	if is_running && api_get /version >/dev/null 2>&1 && nft list table inet mihomo >/dev/null 2>&1; then
+		dns_on
+		logger -t mihomo-vpn "guard: rules alive, dns re-applied"
+		return 0
+	fi
+	$SVC restart >/dev/null 2>&1 || $SVC start >/dev/null 2>&1
+	wait_api && dns_on
+	logger -t mihomo-vpn "guard: tunnel restarted"
+}
+
+ensure_store
+case ${1:-} in
+	on) cmd_on ;;
+	off) cmd_off ;;
+	restart) cmd_off >/dev/null 2>&1; cmd_on ;;
+	toggle) cmd_toggle ;;
+	status) shift; cmd_status "${1:-}" ;;
+	profile) shift; cmd_profile "$@" ;;
+	sub|subscriptions) shift; cmd_sub "$@" ;;
+	settings) shift; cmd_settings "$@" ;;
+	speed) shift; cmd_speed "$@" ;;
+	delay) shift; cmd_delay "$@" ;;
+	test) shift; cmd_test "$@" ;;
+	groups) cmd_groups ;;
+	select) shift; cmd_select "$@" ;;
+	# nodes [KEYWORD...]: list the node names of the active profile, optionally filtered
+	nodes)
+		shift
+		_kw="$*"
+		awk '/^proxies:[ \t]*$/{f=1;next} /^[A-Za-z][A-Za-z0-9_-]*:/{f=0} f' "$CFG" 2>/dev/null |
+			grep -E '^ *- *\{ *name: ' | sed 's/^ *- *{ *name: *//; s/,.*$//; s/^["'\'']//; s/["'\'']$//' |
+			grep -vE '官网|剩余流量|距离下次|套餐到期' |
+			{ if [ -n "$_kw" ]; then grep -F -e $_kw; else cat; fi; }
+		;;
+	optimize) shift; cmd_optimize "${1:-now}" ;;
+	adblock) shift; cmd_adblock "${1:-status}" ;;
+	autoopt) shift; cmd_autoopt "${1:-}" ;;
+	log) shift; cmd_log "$@" ;;
+	gen) gen_config && echo ok ;;
+	guard) cmd_guard ;;
+	health) cmd_health ;;
+	enabled) setting ENABLED 0; echo ;;
+	run) cmd_run ;;
+	dns-on) ensure_store; dns_on ;;
+	dns-off) dns_off ;;
+	*)
+		sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'
+		exit 2
+		;;
+esac

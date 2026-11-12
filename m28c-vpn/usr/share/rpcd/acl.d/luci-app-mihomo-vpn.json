@@ -1,0 +1,23 @@
+{
+	"luci-app-mihomo-vpn": {
+		"description": "Mihomo VPN: switch the tunnel, manage profiles and subscriptions, test nodes",
+		"read": {
+			"cgi-io": [ "exec" ],
+			"file": {
+				"/usr/sbin/mihomo-vpn": [ "exec" ]
+			},
+			"ubus": {
+				"service": [ "list" ]
+			}
+		},
+		"write": {
+			"cgi-io": [ "exec" ],
+			"file": {
+				"/usr/sbin/mihomo-vpn": [ "exec" ]
+			},
+			"ubus": {
+				"service": [ "list", "call" ]
+			}
+		}
+	}
+}

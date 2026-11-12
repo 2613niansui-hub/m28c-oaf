@@ -1,0 +1,220 @@
+#!/bin/sh
+# nasctl - mount the data disk and share it with the LAN (and the tailnet) over FTP.
+#
+# This image has no smbd/ksmbd and no apk feed, so SMB is not available. vsftpd is
+# built in; it speaks plain FTP which Windows Explorer and every phone file manager
+# understand, and over Tailscale the link itself is WireGuard-encrypted.
+#
+#   nasctl status            what is mounted / is FTP up
+#   nasctl detect            print the first usable data block device
+#   nasctl mount [DEV]       mount it on /mnt/data (auto fs detect)
+#   nasctl share             start FTP on :2121 rooted at /mnt/data
+#   nasctl unshare           stop FTP
+#   nasctl auto              mount + share (used by the block hotplug and at boot)
+#   nasctl passwd            (re)create the FTP user, password = router root password
+set -u
+
+DATA=${NAS_DATA:-/mnt/data}
+FTP_PORT=${NAS_FTP_PORT:-2121}
+WEB_PORT=${NAS_WEB_PORT:-8080}
+FTP_USER=nas
+CONF=/var/etc/nas-vsftpd.conf
+PIDF=/var/run/nas-vsftpd.pid
+WEBPID=/var/run/nas-uhttpd.pid
+LOGF=/tmp/nas-vsftpd.log
+WEBLOG=/tmp/nas-httpd.log
+
+mount_point_ok() {
+	mount | grep -q " on $DATA "
+}
+
+# first partition that is not the boot/root media and not already mounted.
+# When a disk has several partitions, the biggest one wins (that is the data one).
+detect_dev() {
+	_best=; _best_sz=0
+	for d in /dev/sd[a-z][0-9] /dev/mmcblk1p[3-9] /dev/mmcblk1p[1-9][0-9] /dev/sd[a-z]; do
+		[ -b "$d" ] || continue
+		case "$d" in
+			/dev/mmcblk1p1|/dev/mmcblk1p2|/dev/mmcblk1) continue ;;
+		esac
+		_n=$(basename "$d")
+		# size in 1K blocks straight from /proc/partitions (no guessable sysfs path)
+		_sz=$(awk -v n="$_n" '$4 == n { print $3 }' /proc/partitions 2>/dev/null | head -n1)
+		[ -n "${_sz:-}" ] || continue
+		[ "$_sz" -gt "$_best_sz" ] 2>/dev/null && { _best=$d; _best_sz=$_sz; }
+	done
+	[ -n "$_best" ] || return 1
+	echo "$_best"
+}
+
+mount_disk() {
+	_dev=${1:-}
+	if [ -z "$_dev" ] && mount_point_ok; then
+		echo "already mounted on $DATA"
+		return 0
+	fi
+	if [ -z "$_dev" ]; then
+		_dev=$(detect_dev)
+		[ -n "${_dev:-}" ] || { echo "no data block device found" >&2; return 1; }
+	fi
+	mkdir -p "$DATA"
+	mount_point_ok && { echo "already mounted on $DATA"; return 0; }
+	for _t in ext4 exfat ntfs3 vfat auto; do
+		if mount -t "$_t" -o rw "$_dev" "$DATA" 2>/dev/null; then
+			echo "mounted $_dev ($_t) on $DATA"
+			logger -t nasctl "mounted $_dev ($_t) on $DATA"
+			return 0
+		fi
+	done
+	echo "cannot mount $_dev (unknown filesystem?)" >&2
+	return 1
+}
+
+ensure_user() {
+	_root_hash=$(awk -F: '$1=="root"{print $2}' /etc/shadow 2>/dev/null)
+	[ -n "${_root_hash:-}" ] || { echo "cannot read root hash from /etc/shadow" >&2; return 1; }
+
+	# the account must have a shell listed in /etc/shells, otherwise vsftpd refuses
+	# the login ("530 Login incorrect") before it even checks the password
+	if ! grep -q "^$FTP_USER:" /etc/passwd; then
+		echo "$FTP_USER:x:2000:2000:FTP share:$DATA:/bin/ash" >>/etc/passwd
+	else
+		sed -i "s#^$FTP_USER:[^:]*:\([0-9]*\):\([0-9]*\):\([^:]*\):[^:]*:.*#\
+$FTP_USER:x:\1:\2:\3:$DATA:/bin/ash#" /etc/passwd
+	fi
+	grep -q "^$FTP_USER:" /etc/group || echo "$FTP_USER:x:2000:" >>/etc/group
+
+	[ -f /etc/shadow ] || touch /etc/shadow
+	# only seed the password once: never overwrite what the user set with `nasctl passwd`
+	if ! grep -q "^$FTP_USER:" /etc/shadow; then
+		echo "$FTP_USER:$_root_hash:19000:0:99999:7:::" >>/etc/shadow
+	fi
+	chmod 600 /etc/shadow
+}
+
+# nasctl passwd [PASSWORD]  - set the FTP password (default: generated)
+# luci.sys.user.setpasswd is the only crypt() on this image (no openssl, no cryptpw)
+set_pass() {
+	ensure_user || return 1
+	_p=${1:-}
+	[ -n "$_p" ] || _p=$(head -c 6 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 8)
+	if command -v lua >/dev/null 2>&1 &&
+	   lua -e "require('luci.sys').user.setpasswd('$FTP_USER','$_p')" 2>/dev/null; then
+		echo "FTP user: $FTP_USER"
+		echo "FTP password: $_p"
+	else
+		echo "lua/luci.sys not available, cannot set a password" >&2
+		return 1
+	fi
+}
+
+share() {
+	mount_point_ok || { echo "nothing mounted on $DATA (run: nasctl auto)" >&2; return 1; }
+	ensure_user
+	# the share root must belong to the FTP user, otherwise the chroot is read-only
+	chown 2000:2000 "$DATA" 2>/dev/null || true
+	chmod 775 "$DATA" 2>/dev/null || true
+	mkdir -p /var/etc /var/run
+	cat >"$CONF" <<EOF
+listen=YES
+listen_ipv6=NO
+listen_port=$FTP_PORT
+background=NO
+anonymous_enable=NO
+local_enable=YES
+write_enable=YES
+local_umask=022
+dirmessage_enable=NO
+use_localtime=YES
+xferlog_enable=NO
+connect_from_port_20=NO
+chroot_local_user=YES
+allow_writeable_chroot=YES
+secure_chroot_dir=/var/run
+local_root=$DATA
+pasv_enable=YES
+pasv_min_port=30000
+pasv_max_port=30100
+idle_session_timeout=600
+log_ftp_protocol=YES
+syslog_enable=YES
+EOF
+	if [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF" 2>/dev/null)" 2>/dev/null; then
+		kill "$(cat "$PIDF")" 2>/dev/null
+		sleep 1
+	fi
+	/usr/sbin/vsftpd "$CONF" >"$LOGF" 2>&1 &
+	echo $! >"$PIDF"
+	sleep 1
+	if kill -0 "$(cat "$PIDF" 2>/dev/null)" 2>/dev/null; then
+		logger -t nasctl "FTP sharing $DATA on port $FTP_PORT"
+		echo "FTP ready: ftp://$FTP_USER@<router-ip>:$FTP_PORT/  (root: $DATA)"
+	else
+		echo "vsftpd failed to start, see $LOGF" >&2
+		tail -5 "$LOGF" >&2
+		return 1
+	fi
+	web_start
+}
+
+# read-only directory browser: uhttpd lists directories and serves files (Range OK),
+# so http://<ip>:8080 works in any browser, including phones
+web_start() {
+	if [ -f "$WEBPID" ] && kill -0 "$(cat "$WEBPID" 2>/dev/null)" 2>/dev/null; then
+		kill "$(cat "$WEBPID")" 2>/dev/null
+		sleep 1
+	fi
+	/usr/sbin/uhttpd -f -p "0.0.0.0:$WEB_PORT" -h "$DATA" -I index.html -b UTF-8 >"$WEBLOG" 2>&1 &
+	echo $! >"$WEBPID"
+	sleep 1
+	if kill -0 "$(cat "$WEBPID" 2>/dev/null)" 2>/dev/null; then
+		logger -t nasctl "HTTP browse $DATA on port $WEB_PORT"
+		echo "HTTP browse: http://<router-ip>:$WEB_PORT/  (read-only)"
+	else
+		echo "uhttpd failed to start, see $WEBLOG" >&2
+		tail -3 "$WEBLOG" >&2
+	fi
+}
+
+web_stop() {
+	[ -f "$WEBPID" ] && kill "$(cat "$WEBPID")" 2>/dev/null
+	rm -f "$WEBPID"
+}
+
+unshare() {
+	[ -f "$PIDF" ] && kill "$(cat "$PIDF")" 2>/dev/null
+	rm -f "$PIDF"
+	web_stop
+	echo "FTP + HTTP stopped"
+}
+
+status() {
+	echo "mount: $(mount | grep " on $DATA " || echo 'not mounted')"
+	_dev=$(detect_dev 2>/dev/null)
+	echo "device: ${_dev:-none}"
+	if [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; then
+		echo "ftp: running on $FTP_PORT (pid $(cat "$PIDF"))"
+	else
+		echo "ftp: stopped"
+	fi
+	if [ -f "$WEBPID" ] && kill -0 "$(cat "$WEBPID" 2>/dev/null)" 2>/dev/null; then
+		echo "http: running on $WEB_PORT (pid $(cat "$WEBPID"))"
+	else
+		echo "http: stopped"
+	fi
+	du -sh "$DATA" 2>/dev/null | sed 's/^/size: /'
+}
+
+case ${1:-status} in
+	status) status ;;
+	detect) detect_dev || true ;;
+	mount) shift; mount_disk "${1:-}" ;;
+	share) share ;;
+	unshare) unshare ;;
+	auto)
+		mount_disk || exit 1
+		share
+		;;
+	passwd) shift; set_pass "${1:-}" ;;
+	*) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac

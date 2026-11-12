@@ -1,0 +1,13 @@
+#!/bin/sh /etc/rc.common
+# nas: mount the data disk (if present) and start the FTP share at boot
+START=96
+STOP=10
+
+start() {
+	[ -x /usr/sbin/nasctl ] || return 0
+	( sleep 5; /usr/sbin/nasctl auto ) >/dev/null 2>&1 &
+}
+
+stop() {
+	[ -x /usr/sbin/nasctl ] && /usr/sbin/nasctl unshare >/dev/null 2>&1
+}

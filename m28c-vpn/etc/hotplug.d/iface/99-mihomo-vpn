@@ -1,0 +1,8 @@
+#!/bin/sh
+# Re-apply the tunnel after an uplink comes up: fw4 reloads on ifup and flushes the
+# nft redirect rules mihomo created (tun auto-redirect), and the default route changes.
+# Node optimization is NOT run here: it only happens at boot or when the user asks.
+[ "$ACTION" = "ifup" ] || exit 0
+[ -x /usr/sbin/mihomo-vpn ] || exit 0
+[ "$(/usr/sbin/mihomo-vpn enabled 2>/dev/null)" = "1" ] || exit 0
+( sleep 5; /usr/sbin/mihomo-vpn guard ) >/dev/null 2>&1 &

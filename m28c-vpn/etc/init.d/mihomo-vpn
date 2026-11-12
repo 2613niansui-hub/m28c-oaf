@@ -1,0 +1,41 @@
+#!/bin/sh /etc/rc.common
+# mihomo-vpn: procd wrapper. The config is generated from the active profile by
+# /usr/sbin/mihomo-vpn gen, the log goes to /tmp/mihomo-vpn.log.
+START=95
+STOP=10
+USE_PROCD=1
+
+start_service() {
+	[ "$(/usr/sbin/mihomo-vpn enabled)" = "1" ] || return 0
+	/usr/sbin/mihomo-vpn gen >/dev/null 2>&1 || {
+		logger -t mihomo-vpn "config generation failed, not starting"
+		return 1
+	}
+	procd_open_instance vpn
+	procd_set_param command /usr/sbin/mihomo-vpn run
+	procd_set_param respawn 3600 5 0
+	procd_set_param limits nofile="65536 65536"
+	procd_set_param stdout 0
+	procd_set_param stderr 0
+	procd_close_instance
+	# procd starts the instance asynchronously: once mihomo listens, point dnsmasq at it
+	# and, if enabled, run the node optimization (real test + handshake, best node wins)
+	(
+		for _i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+			sleep 1
+			[ -n "$(cat /run/mihomo-vpn/started 2>/dev/null)" ] && break
+		done
+		/usr/sbin/mihomo-vpn dns-on
+		# the modem needs a while to dial: wait for a working tunnel before testing nodes
+		for _i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+			sleep 5
+			[ "$(/usr/sbin/mihomo-vpn status --json 2>/dev/null | sed -n 's/.*"exit_ip": "\([^"]*\)".*/\1/p')" != "-" ] && break
+		done
+		# boot-time node optimization (the only automatic one; see AUTO_OPTIMIZE)
+		[ "$(/usr/sbin/mihomo-vpn settings get AUTO_OPTIMIZE)" = "1" ] && /usr/sbin/mihomo-vpn optimize start
+	) >/dev/null 2>&1 &
+}
+
+stop_service() {
+	/usr/sbin/mihomo-vpn dns-off
+}

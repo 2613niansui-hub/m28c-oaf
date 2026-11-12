@@ -1,0 +1,12 @@
+#!/bin/sh
+# Block hotplug: a data partition appeared (or was re-inserted) -> mount + share it.
+[ "$ACTION" = "add" ] || exit 0
+[ -x /usr/sbin/nasctl ] || exit 0
+case "$DEVNAME" in
+	sd[a-z][0-9]*|mmcblk[0-9]p[0-9]*) ;;
+	*) exit 0 ;;
+esac
+case "$DEVNAME" in
+	mmcblk1p1|mmcblk1p2|mmcblk1) exit 0 ;;
+esac
+( sleep 2; /usr/sbin/nasctl auto ) >/dev/null 2>&1 &
