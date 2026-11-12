@@ -46,6 +46,14 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+      - name: 3b. pin attr to 2.5.2 (kernel 6.12 headers)
+        run: |
+          cd immortalwrt
+          if [ -f feeds/packages/utils/attr/Makefile ]; then
+            sed -i -e 's/^PKG_VERSION:=.*/PKG_VERSION:=2.5.2/' \
+                   -e 's/^PKG_HASH:=.*/PKG_HASH:=skip/' feeds/packages/utils/attr/Makefile
+            grep -E '^(PKG_VERSION|PKG_HASH)' feeds/packages/utils/attr/Makefile
+          fi
       - name: 4. add OpenAppFilter
         run: |
           cd immortalwrt
