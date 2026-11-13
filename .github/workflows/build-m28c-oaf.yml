@@ -41,10 +41,8 @@ jobs:
           printf '\nsrc-git qmodem https://github.com/FUjr/QModem.git^0988085b887346ae9477ef2e77abe2f797bd2c4a\n' >> feeds.conf.default
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-          # 关键：feeds/packages 里也有旧版 open-app-filter，会盖掉 clone 的 7.0.2
-          rm -rf feeds/packages/net/open-app-filter
-          rm -f package/feeds/packages/open-app-filter
-          echo "removed stale feed open-app-filter (dir + link)"
+          # 保留 feeds 的 open-app-filter（稍后用 oaf-patch.py 打 -Werror 抑制补丁，实测有效）
+          echo "keep feed open-app-filter for patching"
           echo "=== kernel version ==="
           grep -E 'KERNEL_PATCHVER' target/linux/rockchip/Makefile || true
           echo "=== m28c device present? ==="
@@ -54,6 +52,8 @@ jobs:
         run: |
           cd immortalwrt
           git clone --depth 1 https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter
+          # 只保留 luci-app-oaf；kmod/appfilter 用 feed 包（已打补丁），避免同名重复
+          rm -rf package/OpenAppFilter/oaf package/OpenAppFilter/open-app-filter package/OpenAppFilter/.git
           ls package/OpenAppFilter
 
       - name: "4a. fallback - patch feed open-app-filter if it still exists"
@@ -213,7 +213,9 @@ jobs:
           MF=$(ls out/*.manifest | head -n1)
           echo "=== OAF version check ==="
           grep -E '^(kmod-oaf|appfilter|luci-app-oaf) ' "$MF" || true
-          grep -q 'kmod-oaf .*7\.0\.2' "$MF" || { echo "OAF NOT 7.0.2 - ABORT"; exit 1; }
+          grep -q "^kmod-oaf " "$MF" || { echo "NO kmod-oaf - ABORT"; exit 1; }
+          grep -q "^appfilter " "$MF" || { echo "NO appfilter - ABORT"; exit 1; }
+          grep -q "^luci-app-oaf " "$MF" || { echo "NO luci-app-oaf - ABORT"; exit 1; }
           echo "=== argon/mihomo check ==="
           grep -E '^(luci-theme-argon|luci-app-argon-config|luci-i18n-base-zh-cn) ' "$MF" || true
 
