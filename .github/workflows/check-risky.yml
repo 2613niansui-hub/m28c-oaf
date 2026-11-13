@@ -123,7 +123,13 @@ jobs:
           make defconfig >/dev/null
           grep -E 'CONFIG_PACKAGE_(luci-theme-argon|luci-app-argon-config|luci-app-fancontrol|fancontrol|luci-app-qmodem-next|qmodem|tom_modem|ubus-at-daemon|qmodem-smsd|sms-forwarder-next|luci-app-oaf|kmod-oaf|appfilter|luci-app-cpufreq|luci-app-3ginfo-lite)=' .config
 
-      - name: 6. compile risky packages one by one
+      - name: 6. build host tools + toolchain first (needed by package compile)
+        run: |
+          cd immortalwrt
+          make -j$(nproc) tools/install toolchain/install V=s > "$GITHUB_WORKSPACE/prep.log" 2>&1 || { tail -n 60 "$GITHUB_WORKSPACE/prep.log"; exit 1; }
+          echo "tools+toolchain ok"
+
+      - name: 7. compile risky packages one by one
         run: |
           cd immortalwrt
           : > "$GITHUB_WORKSPACE/check.log"
@@ -141,7 +147,7 @@ jobs:
           grep -E 'RESULT_(OK|FAIL)' "$GITHUB_WORKSPACE/check.log"
           if grep -q RESULT_FAIL "$GITHUB_WORKSPACE/check.log"; then exit 1; fi
 
-      - name: 7. upload log
+      - name: 8. upload log
         if: always()
         uses: actions/upload-artifact@v4
         with:
