@@ -80,7 +80,8 @@ jobs:
           git remote add origin https://github.com/destan19/OpenAppFilter.git
           git fetch --depth 1 origin 569f93bfd56afc3ae8c21f13fc973926ff6629a5
           git checkout -q FETCH_HEAD
-          ls
+          printf '\nccflags-y += -Wno-error -Wno-error=missing-prototypes -Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-error=format -Wno-error=strict-prototypes\n' >> oaf/Makefile
+          tail -n 3 oaf/Makefile
 
       - name: 4b. vendor argon theme + argon-config + fancontrol (not proper feeds)
         run: |
