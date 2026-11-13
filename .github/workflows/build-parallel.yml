@@ -132,25 +132,27 @@ jobs:
           bash .github/scripts/setup-tree.sh
           echo "prepare_setup_seconds=$(( $(date +%s) - T0 ))" | tee -a timings.txt
 
-      - name: 4. host tools + toolchain (skip on cache hit)
+      - name: 4. host tools + toolchain (skip only when the cached toolchain matches this tree)
         id: toolchain
         run: |
           set -o pipefail
           cd immortalwrt
           T0=$(date +%s)
-          if ls -d staging_dir/toolchain-* >/dev/null 2>&1; then
-            echo "toolchain restored from cache -> skip toolchain/install"
+          GCCV=$(sed -n 's/^CONFIG_GCC_VERSION="\(.*\)"$/\1/p' .config | head -n1)
+          LIBCV=$(sed -n 's/^CONFIG_LIBC="\(.*\)"$/\1/p' .config | head -n1)
+          echo "expected toolchain: gcc=${GCCV:-?} libc=${LIBCV:-?}"
+          if [ -n "$GCCV" ] && ls -d staging_dir/toolchain-*gcc-"$GCCV"_"$LIBCV" >/dev/null 2>&1; then
+            echo "matching toolchain restored from cache -> skip toolchain/install"
             BUILT=0
           else
-            echo "toolchain missing -> make tools/install toolchain/install"
-            make -j"$(nproc)" tools/install toolchain/install V=s > /tmp/toolchain.log 2>&1 \
+            echo "toolchain missing or built for another tree/gcc -> rebuild"
+            rm -rf staging_dir/toolchain-* build_dir/toolchain-* staging_dir/target-* 2>/dev/null || true
+            make -j"$(nproc)" tools/install V=s > /tmp/tools-build.log 2>&1 \
+              || { tail -n 120 /tmp/tools-build.log; exit 1; }
+            make -j"$(nproc)" toolchain/install V=s > /tmp/toolchain.log 2>&1 \
               || { tail -n 150 /tmp/toolchain.log; exit 1; }
             BUILT=1
           fi
-          # top up host tools incrementally (fast when cached); protects against a
-          # cache produced by a neighbouring tree revision
-          make -j"$(nproc)" tools/install V=s > /tmp/tools-topup.log 2>&1 \
-            || { tail -n 100 /tmp/tools-topup.log; exit 1; }
           T1=$(date +%s)
           echo "prepare_toolchain_seconds=$((T1-T0))" | tee -a ../timings.txt
           echo "built=$BUILT" >> "$GITHUB_OUTPUT"
