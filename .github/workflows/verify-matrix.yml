@@ -43,6 +43,9 @@ jobs:
             immortalwrt/feeds
             immortalwrt/.config
             immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8
+            immortalwrt/build_dir/host
+            immortalwrt/build_dir/hostpkg
+            immortalwrt/build_dir/toolchain-aarch64_generic_gcc-14.3.0_musl
           key: m28c-prep-${{ inputs.cache_tag }}-${{ github.run_id }}
           restore-keys: |
             m28c-prep-${{ inputs.cache_tag }}-
@@ -94,6 +97,10 @@ jobs:
           git clone --depth 1 https://github.com/immortalwrt/packages.git /tmp/ipkgs
           cp -r /tmp/ipkgs/utils/fancontrol package/fancontrol
           rm -rf package/luci-app-fancontrol/.git package/fancontrol/.git
+          sed -i "s#include ../../luci.mk#include $(TOPDIR)/feeds/luci/luci.mk#" package/luci-app-fancontrol/Makefile
+          [ -f package/luci-app-argon-config/Makefile ] && sed -i "s#include ../../luci.mk#include $(TOPDIR)/feeds/luci/luci.mk#" package/luci-app-argon-config/Makefile
+          sed -i "s#include ../../luci.mk#include $(TOPDIR)/feeds/luci/luci.mk#" package/luci-app-fancontrol/Makefile
+          [ -f package/luci-app-argon-config/Makefile ] && sed -i "s#include ../../luci.mk#include $(TOPDIR)/feeds/luci/luci.mk#" package/luci-app-argon-config/Makefile
       - name: config
         run: |
           cd immortalwrt
@@ -144,6 +151,7 @@ jobs:
           cd immortalwrt
           if ls -d staging_dir/toolchain-* >/dev/null 2>&1; then
             echo "cache_hit=1" >> "$GITHUB_OUTPUT"
+            find staging_dir build_dir -name '.built*' -o -name '.configured*' -o -name '.prepared*' 2>/dev/null | xargs -r touch
             echo "toolchain restored from cache, skip build"
           else
             echo "cache_hit=0" >> "$GITHUB_OUTPUT"
@@ -173,6 +181,9 @@ jobs:
             immortalwrt/feeds
             immortalwrt/.config
             immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8
+            immortalwrt/build_dir/host
+            immortalwrt/build_dir/hostpkg
+            immortalwrt/build_dir/toolchain-aarch64_generic_gcc-14.3.0_musl
           key: m28c-prep-${{ inputs.cache_tag }}-${{ github.run_id }}
 
   verify:
@@ -217,6 +228,9 @@ jobs:
             immortalwrt/feeds
             immortalwrt/.config
             immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8
+            immortalwrt/build_dir/host
+            immortalwrt/build_dir/hostpkg
+            immortalwrt/build_dir/toolchain-aarch64_generic_gcc-14.3.0_musl
           key: m28c-prep-${{ inputs.cache_tag }}-${{ github.run_id }}
           restore-keys: |
             m28c-prep-${{ inputs.cache_tag }}-
@@ -266,6 +280,11 @@ jobs:
           git clone --depth 1 https://github.com/immortalwrt/packages.git /tmp/ipkgs
           cp -r /tmp/ipkgs/utils/fancontrol package/fancontrol
           rm -rf package/luci-app-fancontrol/.git package/fancontrol/.git
+      - name: touch cached stamps (avoid mtime-triggered rebuilds)
+        run: |
+          cd immortalwrt
+          find staging_dir build_dir -name '.built*' -o -name '.configured*' -o -name '.prepared*' 2>/dev/null | xargs -r touch
+          echo "stamps touched"
       - name: defconfig (uses cached .config)
         run: |
           cd immortalwrt
