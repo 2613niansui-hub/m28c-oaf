@@ -37,60 +37,72 @@ def main() -> int:
 
     dirs = set()
     always_dirs = set()
+    cond_dirs = {}          # dir -> CONFIG_PACKAGE_* symbol referenced by packagedeps
     for line in open(deps_path, encoding="utf-8", errors="replace"):
         m = PKG_LINE.match(line)
         if m:
-            if "CONFIG_PACKAGE_" + m.group(1) in selected:
+            sym = "CONFIG_PACKAGE_" + m.group(1)
+            if sym in selected:
                 dirs.add(m.group(2))
+            else:
+                cond_dirs[m.group(2)] = sym
             continue
         m = ALWAYS_LINE.match(line)
         if m:
-            # `package- += dir` are dirs whose packages are all BUILDONLY.  A full
-            # `make world` never schedules them in package/compile; they are built
-            # only when another package lists them as a build dependency (the
-            # dependency edges in tmp/.packagedeps make make pull them in).
-            # Scheduling them explicitly here made the first test run build Qt5 /
-            # bpf-headers / easyloggingpp pointlessly (and fail on host cmake/clang).
             always_dirs.add(m.group(1))
             continue
 
     # package/Makefile unconditionally does: package-y += kernel/linux
     dirs.add("kernel/linux")
 
-    # `package- += dir` covers two different cases:
-    #  a) build-only dirs (all `define Package/*` blocks carry BUILDONLY:=1):
-    #     never scheduled by world, built on demand via dep edges -> skip.
-    #  b) essential dirs whose Config symbol is not in .config (base-files,
-    #     libs/toolchain, ...): world DOES build these; they must be scheduled.
-    # Inspect the dir Makefile to tell them apart.
     import os
     tree = os.path.dirname(os.path.abspath(cfg_path))
-    always_keep = set()
-    for d in sorted(always_dirs):
-        mf = os.path.join(tree, "package", d, "Makefile")
+
+    def has_runtime_mf(mf):
+        """True/False when the dir Makefile can be classified, None if unknown.
+
+        A dir is build-only iff every `define Package/<name>` block contains
+        BUILDONLY:=1.  `define Package/<name>/description|install|conffiles` are
+        sub-blocks of the package and must not be treated as separate packages
+        (websocketpp/easyloggingpp etc. would otherwise be misclassified).
+        """
         if not os.path.isfile(mf):
-            always_keep.add(d)          # cannot inspect -> keep, safer
-            continue
+            return None
         try:
             txt = open(mf, encoding="utf-8", errors="replace").read()
         except OSError:
-            always_keep.add(d)
-            continue
+            return None
         blocks = re.split(r"\ndefine\s+(?:Kernel)?Package/[A-Za-z0-9_.+-]+\n", txt)
         if len(blocks) <= 1:
-            always_keep.add(d)
-            continue
-        has_runtime = False
+            return None
         for b in blocks[1:]:
             if "BUILDONLY:=1" not in re.sub(r"\s+", "", b):
-                has_runtime = True
-                break
-        if has_runtime:
+                return True
+        return False
+
+    # `package- += dir`: dirs whose packages are all BUILDONLY (skipped by world,
+    # built on demand via dependency edges).  A few essential dirs may also show
+    # up here; keep those whose Makefile has at least one non-build-only package.
+    always_keep = set()
+    for d in sorted(always_dirs):
+        if has_runtime_mf(os.path.join(tree, "package", d, "Makefile")) is not False:
             always_keep.add(d)
     dirs |= always_keep
+
+    # `package-$(CONFIG_PACKAGE_x) += dir` where CONFIG_PACKAGE_x is completely
+    # absent from .config: world builds these (e.g. base-files / libs/toolchain are
+    # pulled in by the target DEFAULT_PACKAGES, not by a visible CONFIG symbol).
+    defined_syms = set(re.findall(r"^#?\s*(CONFIG_[A-Za-z0-9_.+-]+)", cfg, re.M))
+    cond_keep = set()
+    for d, sym in sorted(cond_dirs.items()):
+        if sym in defined_syms or d in dirs:
+            continue
+        if has_runtime_mf(os.path.join(tree, "package", d, "Makefile")) is not False:
+            cond_keep.add(d)
+    dirs |= cond_keep
     buildonly_skipped = sorted(always_dirs - always_keep)
     # keep the list deterministic and drop obviously bogus entries
-    dirs = sorted(d for d in dirs if "/" in d and not d.startswith("-"))
+    dirs = sorted(d for d in dirs if not d.startswith("-") and os.path.isdir(os.path.join(tree, "package", d)))
 
     # dependency edges (only for reporting / clustering sanity)
     edges = {}
@@ -164,7 +176,10 @@ def main() -> int:
     print("=== parallel build plan ===", file=sys.stderr)
     print("selected build dirs: %d, dep edges: %d, groups: %d" % (len(dirs), len(edges), n),
           file=sys.stderr)
-    print("always dirs kept (essential, built by world): %d" % len(always_keep), file=sys.stderr)
+    print("always dirs kept (non-build-only): %d" % len(always_keep), file=sys.stderr)
+    print("essential dirs with absent CONFIG symbol scheduled: %d" % len(cond_keep), file=sys.stderr)
+    for d in sorted(cond_keep):
+        print("  essential %s" % d, file=sys.stderr)
     print("build-only dirs not scheduled (built on demand): %d" % len(buildonly_skipped),
           file=sys.stderr)
     for d in buildonly_skipped:
