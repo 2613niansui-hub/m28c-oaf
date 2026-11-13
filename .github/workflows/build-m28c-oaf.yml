@@ -41,6 +41,9 @@ jobs:
           printf '\nsrc-git qmodem https://github.com/FUjr/QModem.git^0988085b887346ae9477ef2e77abe2f797bd2c4a\n' >> feeds.conf.default
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+          # 关键：feeds/packages 里也有一个旧版 open-app-filter(2026.04.20)，会盖掉我们 clone 的 7.0.2
+          rm -rf feeds/packages/net/open-app-filter
+          echo "removed stale feed open-app-filter"
           echo "=== kernel version ==="
           grep -E 'KERNEL_PATCHVER' target/linux/rockchip/Makefile || true
           echo "=== m28c device present? ==="
@@ -51,6 +54,19 @@ jobs:
           cd immortalwrt
           git clone --depth 1 https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter
           ls package/OpenAppFilter
+
+      - name: 4b. vendor argon config page (not in master luci feed)
+        run: |
+          cd immortalwrt
+          git clone --depth 1 https://github.com/jerrykuku/luci-theme-argon.git /tmp/argon-master
+          if [ -d /tmp/argon-master/compat/luci-app-argon-config ]; then
+            cp -r /tmp/argon-master/compat/luci-app-argon-config package/luci-app-argon-config
+            rm -rf package/luci-app-argon-config/.git
+            sed -i "s#include ../../luci.mk#include $(TOPDIR)/feeds/luci/luci.mk#" package/luci-app-argon-config/Makefile || true
+            echo "argon-config vendored"
+          else
+            echo "WARN no compat/luci-app-argon-config"
+          fi
 
       - name: 5. write .config (full feature set)
         run: |
@@ -184,6 +200,12 @@ jobs:
           find immortalwrt/bin/targets/rockchip/armv8 -maxdepth 1 -name "*m28c*" -exec cp -v {} out/ \;
           ls -lh out/
           test -n "$(ls -A out)" || { echo "NO M28C IMAGE PRODUCED"; exit 1; }
+          MF=$(ls out/*.manifest | head -n1)
+          echo "=== OAF version check ==="
+          grep -E '^(kmod-oaf|appfilter|luci-app-oaf) ' "$MF" || true
+          grep -q 'kmod-oaf .*7\.0\.2' "$MF" || { echo "OAF NOT 7.0.2 - ABORT"; exit 1; }
+          echo "=== argon/mihomo check ==="
+          grep -E '^(luci-theme-argon|luci-app-argon-config|luci-i18n-base-zh-cn) ' "$MF" || true
 
       - name: 10. upload artifact
         uses: actions/upload-artifact@v4
