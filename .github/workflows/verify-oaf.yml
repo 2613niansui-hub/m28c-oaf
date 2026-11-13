@@ -83,9 +83,10 @@ jobs:
             echo 'LS0tIGEvdG9vbHMvYXR0ci5jCisrKyBiL3Rvb2xzL2F0dHIuYwpAQCAtMTcsNiArMTcsNyBAQAogICovCiAKICNpbmNsdWRlICJjb25maWcuaCIKKyNpbmNsdWRlIDxsaWJnZW4uaD4KIAogI2luY2x1ZGUgPHN5cy90eXBlcy5oPgogI2luY2x1ZGUgPHN5cy9wYXJhbS5oPgo=' | base64 -d > feeds/packages/utils/attr/patches/100-libgen.patch
           fi
           F=feeds/packages/net/open-app-filter/Makefile
-          # drop the OLD appended block (dead: KCFLAGS is overwritten by include/kernel.mk,
-          # and a define appended AFTER $(eval $(call KernelPackage,...)) is never expanded)
-          sed -i '/^# OAFLOCALFIX/,$d' "$F"
+          # strip a previously inserted patch block (ONLY up to its endef - never to EOF:
+          # a before-eval block is followed by the real $(eval ...) package definitions)
+          sed -i '/^# OAFLOCALFIX/,/^endef/d' "$F"
+          sed -i '/^# OAF-M28C-WARN-FIX/,/^endef/d' "$F"
           python3 - "$F" <<'PY'
           import sys
           p = sys.argv[1]
