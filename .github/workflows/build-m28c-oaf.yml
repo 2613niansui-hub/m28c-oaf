@@ -106,6 +106,12 @@ jobs:
           ls package/luci-app-fancontrol/Makefile package/fancontrol/Makefile
           # pinned luci feed already ships argon theme + config page (consistent snapshot)
           ls feeds/luci/themes/luci-theme-argon/Makefile feeds/luci/applications/luci-app-argon-config/Makefile
+          # vendor cpufreq tool (luci-app-cpufreq DEPENDS on it; not present in a302626e tree)
+          mkdir -p package/cpufreq/files
+          for f in Makefile files/cpufreq.init files/cpufreq.uci files/cpufreq.config; do
+            curl -fsSL "https://raw.githubusercontent.com/immortalwrt/immortalwrt/master/package/emortal/cpufreq/$f" -o "package/cpufreq/$f"
+          done
+          ls package/cpufreq/Makefile package/cpufreq/files
 
       - name: 5. write .config
         run: |
@@ -134,6 +140,7 @@ jobs:
           CONFIG_PACKAGE_luci-app-adguardhome=y
           CONFIG_PACKAGE_luci-app-3ginfo-lite=y
           CONFIG_PACKAGE_luci-app-cpufreq=y
+          CONFIG_PACKAGE_cpufreq=y
           CONFIG_PACKAGE_luci-app-fancontrol=y
           CONFIG_PACKAGE_fancontrol=y
           CONFIG_PACKAGE_luci-app-qmodem-next=y
