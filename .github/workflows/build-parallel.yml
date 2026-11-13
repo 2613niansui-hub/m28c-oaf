@@ -35,10 +35,15 @@ on:
       groups:
         description: "number of parallel package groups"
         required: false
-        default: "6"
+        default: "10"
+      reuse_run_id:
+        description: "optional assemble-only mode: download par-pkgs-* artifacts from this run id"
+        required: false
+        default: ""
 
 permissions:
   contents: read
+  actions: read
 
 env:
   DEBIAN_FRONTEND: noninteractive
@@ -50,6 +55,7 @@ env:
 
 jobs:
   prepare:
+    if: ${{ github.event.inputs.reuse_run_id == '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 150
     outputs:
@@ -283,6 +289,7 @@ jobs:
   pkg:
     name: pkg (${{ matrix.group }}, ${{ matrix.ndirs }} dirs)
     needs: prepare
+    if: ${{ always() && needs.prepare.result == 'success' && github.event.inputs.reuse_run_id == '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     strategy:
@@ -448,7 +455,7 @@ jobs:
 
   assemble:
     needs: [prepare, pkg]
-    if: ${{ always() && needs.prepare.result == 'success' }}
+    if: ${{ always() && (needs.prepare.result == 'success' || github.event.inputs.reuse_run_id != '') }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
     steps:
@@ -543,7 +550,18 @@ jobs:
           echo "assemble_setup_seconds=$(( $(date +%s) - T0 ))" | tee -a timings.txt
 
 
-      - name: 4. download all package artifacts
+      - name: 4a. download package artifacts from a previous run (assemble-only mode)
+        if: ${{ github.event.inputs.reuse_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          pattern: par-pkgs-*
+          merge-multiple: true
+          path: art
+          run-id: ${{ github.event.inputs.reuse_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 4b. download package artifacts from this run
+        if: ${{ github.event.inputs.reuse_run_id == '' }}
         uses: actions/download-artifact@v4
         with:
           pattern: par-pkgs-*
@@ -575,6 +593,25 @@ jobs:
       - name: 6. inject assemble-install target (rootfs recipe without aggregate deps)
         run: |
           bash .github/scripts/inject-assemble-target.sh immortalwrt
+
+      - name: 6b. build missing essential packages that stage A did not schedule (version metadata)
+        run: |
+          set -o pipefail
+          cd immortalwrt
+          ST=staging_dir/target-aarch64_generic_musl
+          NEED=""
+          [ -f "$ST/base-files.version" ] || NEED="$NEED package/base-files/compile"
+          [ -f "$ST/libc.version" ]      || NEED="$NEED package/libs/toolchain/compile"
+          [ -f "$ST/kernel.version" ]    || NEED="$NEED package/kernel/linux/compile"
+          if [ -n "$NEED" ]; then
+            echo "building missing metadata dirs:$NEED"
+            T0=$(date +%s)
+            make -j"$(nproc)" $NEED V=s > /tmp/meta.log 2>&1 || { tail -n 150 /tmp/meta.log; exit 1; }
+            echo "meta_build_seconds=$(( $(date +%s) - T0 ))" | tee -a ../timings.txt
+          else
+            echo "version metadata already present"
+          fi
+          ls -l $ST/*.version || true
 
       - name: 7. package/merge + package/merge-index (packages.adb)
         run: |
