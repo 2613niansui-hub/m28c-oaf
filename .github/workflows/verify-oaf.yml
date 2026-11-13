@@ -65,8 +65,13 @@ jobs:
           src-git video      https://github.com/openwrt/video.git^393e8eac5b45c5a1dc455ffe0e19e7651ad508a3
           src-git qmodem     https://github.com/FUjr/QModem.git^0988085b887346ae9477ef2e77abe2f797bd2c4a
           EOF
+          # restored cache may carry the prepare job's local feed edits -> clean before update
+          for d in feeds/*/; do
+            if [ -d "$d/.git" ]; then git -C "$d" reset --hard -q; git -C "$d" clean -fdq || true; fi
+          done
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+          df -h . | tail -n 2
 
       - name: 5. attr patch + real OAF feed fix (build flags, correct eval order)
         run: |
