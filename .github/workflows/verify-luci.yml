@@ -35,7 +35,7 @@ jobs:
             libpython3-dev rsync swig unzip zlib1g-dev file wget \
             libelf-dev bc device-tree-compiler
 
-      - name: 2b. restore matrix prepare cache (compact layout: staging/dl/feeds/config/linux)
+      - name: 2b. restore matrix prepare cache (compact layout)
         id: prepcache_compact
         uses: actions/cache/restore@v4
         with:
@@ -54,7 +54,7 @@ jobs:
             m28c-prep-v2-
             m28c-prep-
 
-      - name: 2c. restore matrix prepare cache (extended layout: +host/hostpkg/toolchain)
+      - name: 2c. restore matrix prepare cache (extended layout)
         id: prepcache_ext
         if: steps.prepcache_compact.outputs.cache-hit != 'true'
         uses: actions/cache/restore@v4
