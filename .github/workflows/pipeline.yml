@@ -22,9 +22,7 @@ jobs:
           post() { curl -sS -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "Content-Type: application/json" -d "$2" "https://api.github.com/repos/$REPO$1"; }
           wf_id() { api "/actions/workflows" | jq -r --arg p "$1" '[.workflows[] | select(.path==$p) | .id][0]'; }
           for p in \
-            ".github/workflows/verify-oaf.yml" \
-            ".github/workflows/verify-qmodem.yml" \
-            ".github/workflows/verify-luci.yml"; do
+            ".github/workflows/verify-matrix.yml"; do
             id=$(wf_id "$p")
             if [ -z "$id" ] || [ "$id" = "null" ]; then echo "MISSING_WORKFLOW $p"; exit 1; fi
             code=$(post "/actions/workflows/$id/dispatches" '{"ref":"main"}')
@@ -58,9 +56,7 @@ jobs:
             echo "TIMEOUT $p"; return 1
           }
           fail=0
-          wait_path ".github/workflows/verify-oaf.yml"    || fail=1
-          wait_path ".github/workflows/verify-qmodem.yml" || fail=1
-          wait_path ".github/workflows/verify-luci.yml"   || fail=1
+          wait_path ".github/workflows/verify-matrix.yml" || fail=1
           [ "$fail" = "0" ] || { echo "VERIFY_FAILED - build not started"; exit 1; }
 
       - name: 3. dispatch full build
