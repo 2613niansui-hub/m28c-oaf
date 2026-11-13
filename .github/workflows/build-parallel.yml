@@ -130,7 +130,8 @@ jobs:
         run: |
           T0=$(date +%s)
           bash .github/scripts/setup-tree.sh
-          echo "prepare_setup_seconds=$(( $(date +%s) - T0 ))" | tee -a timings.txt      - name: 3b. repair incomplete cached tree (cache predates config/ inclusion)
+          echo "prepare_setup_seconds=$(( $(date +%s) - T0 ))" | tee -a timings.txt
+      - name: 3b. repair incomplete cached tree (cache predates config/ inclusion)
         run: |
           cd immortalwrt
           if [ ! -d config ] || [ ! -f feeds.conf.default ]; then
@@ -356,7 +357,8 @@ jobs:
         run: |
           T0=$(date +%s)
           bash .github/scripts/setup-tree.sh
-          echo "job_setup_seconds=$(( $(date +%s) - T0 ))" | tee -a timing-${{ matrix.group }}.txt      - name: 3b. repair incomplete cached tree (cache predates config/ inclusion)
+          echo "job_setup_seconds=$(( $(date +%s) - T0 ))" | tee -a timing-${{ matrix.group }}.txt
+      - name: 3b. repair incomplete cached tree (cache predates config/ inclusion)
         run: |
           cd immortalwrt
           if [ ! -d config ] || [ ! -f feeds.conf.default ]; then
@@ -512,7 +514,8 @@ jobs:
         run: |
           T0=$(date +%s)
           bash .github/scripts/setup-tree.sh
-          echo "assemble_setup_seconds=$(( $(date +%s) - T0 ))" | tee -a timings.txt      - name: 3b. repair incomplete cached tree (cache predates config/ inclusion)
+          echo "assemble_setup_seconds=$(( $(date +%s) - T0 ))" | tee -a timings.txt
+      - name: 3b. repair incomplete cached tree (cache predates config/ inclusion)
         run: |
           cd immortalwrt
           if [ ! -d config ] || [ ! -f feeds.conf.default ]; then
