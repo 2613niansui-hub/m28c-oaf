@@ -1,0 +1,78 @@
+name: Pipeline (verify all -> build)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  verify-then-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - name: 1. dispatch the three verification workflows
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          REPO="${{ github.repository }}"
+          api() { curl -sS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$REPO$1"; }
+          post() { curl -sS -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "Content-Type: application/json" -d "$2" "https://api.github.com/repos/$REPO$1"; }
+          wf_id() { api "/actions/workflows" | jq -r --arg p "$1" '[.workflows[] | select(.path==$p) | .id][0]'; }
+          for p in \
+            ".github/workflows/verify-oaf.yml" \
+            ".github/workflows/verify-qmodem.yml" \
+            ".github/workflows/verify-luci.yml"; do
+            id=$(wf_id "$p")
+            if [ -z "$id" ] || [ "$id" = "null" ]; then echo "MISSING_WORKFLOW $p"; exit 1; fi
+            code=$(post "/actions/workflows/$id/dispatches" '{"ref":"main"}')
+            echo "dispatch $p id=$id http=$code"
+            [ "$code" = "204" ] || exit 1
+          done
+          sleep 15
+          api "/actions/runs?per_page=10" | jq -r '.workflow_runs[] | "STARTED \(.name) #\(.run_number) \(.status)"'
+
+      - name: 2. wait for all three verifications to pass
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          REPO="${{ github.repository }}"
+          api() { curl -sS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$REPO$1"; }
+          wait_path() {
+            p="$1"
+            for i in $(seq 1 80); do
+              line=$(api "/actions/runs?per_page=30" | jq -r --arg p "$p" '[.workflow_runs[] | select(.path==$p)][0] | "\(.id) \(.status) \(.conclusion) #\(.run_number)"')
+              rid=$(echo "$line" | cut -d' ' -f1)
+              st=$(echo "$line" | cut -d' ' -f2)
+              co=$(echo "$line" | cut -d' ' -f3)
+              if [ "$st" = "completed" ]; then
+                echo "RESULT $p run=$rid $co"
+                [ "$co" = "success" ] && return 0 || return 1
+              fi
+              echo "waiting $p ($st) attempt $i"
+              sleep 45
+            done
+            echo "TIMEOUT $p"; return 1
+          }
+          fail=0
+          wait_path ".github/workflows/verify-oaf.yml"    || fail=1
+          wait_path ".github/workflows/verify-qmodem.yml" || fail=1
+          wait_path ".github/workflows/verify-luci.yml"   || fail=1
+          [ "$fail" = "0" ] || { echo "VERIFY_FAILED - build not started"; exit 1; }
+
+      - name: 3. dispatch full build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          REPO="${{ github.repository }}"
+          api() { curl -sS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$REPO$1"; }
+          post() { curl -sS -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "Content-Type: application/json" -d "$2" "https://api.github.com/repos/$REPO$1"; }
+          id=$(api "/actions/workflows" | jq -r '[.workflows[] | select(.path==".github/workflows/build-m28c-oaf.yml") | .id][0]')
+          echo "build workflow id=$id"
+          code=$(post "/actions/workflows/$id/dispatches" '{"ref":"main"}')
+          echo "dispatch build http=$code"
+          [ "$code" = "204" ]
