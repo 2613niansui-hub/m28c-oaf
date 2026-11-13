@@ -133,6 +133,7 @@ jobs:
           CONFIG_PACKAGE_adguardhome=y
           CONFIG_PACKAGE_luci-app-adguardhome=y
           CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+          CONFIG_LUCI_LANG_zh_Hans=y
           CONFIG_PACKAGE_kmod-usb-net-cdc-mbim=y
           CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y
           CONFIG_PACKAGE_kmod-nft-tproxy=y
@@ -203,7 +204,7 @@ jobs:
           - area: ui-theme
             pkgs: "luci-theme-argon luci-app-argon-config fancontrol luci-app-fancontrol"
           - area: ui-apps
-            pkgs: "luci-app-cpufreq luci-app-3ginfo-lite luci-app-smartdns luci-app-adguardhome luci-i18n-base-zh-cn"
+            pkgs: "luci-app-cpufreq luci-app-3ginfo-lite luci-app-smartdns luci-app-adguardhome luci-base"
           - area: kmods
             pkgs: "kmod-usb-net-cdc-mbim kmod-usb-net-qmi-wwan kmod-nft-tproxy kmod-tun kmod-usb-storage kmod-fs-ext4 kmod-fs-exfat kmod-fs-ntfs3 kmod-fs-vfat"
     steps:
@@ -298,15 +299,11 @@ jobs:
       - name: kernel prepare (kmod targets need generated kernel .config)
         run: |
           cd immortalwrt
-          case "${{ matrix.area }}" in
-            oaf|kmods|qmodem-core|qmodem-sms)
-              if ls build_dir/target-*/linux-*/linux-*/.config >/dev/null 2>&1; then
-                echo "kernel .config restored from cache"
-              else
-                make -j$(nproc) target/linux/compile V=s > /tmp/kprepare.log 2>&1 || { tail -n 100 /tmp/kprepare.log; exit 1; }
-              fi ;;
-            *) echo "skip kernel prepare" ;;
-          esac
+          if ls build_dir/target-*/linux-*/linux-*/.config >/dev/null 2>&1; then
+            echo "kernel .config restored from cache"
+          else
+            make -j$(nproc) target/linux/compile V=s > /tmp/kprepare.log 2>&1 || { tail -n 100 /tmp/kprepare.log; exit 1; }
+          fi
       - name: compile area packages
         run: |
           cd immortalwrt
