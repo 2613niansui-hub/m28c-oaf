@@ -143,7 +143,7 @@ jobs:
           make defconfig >/dev/null
           grep -E 'CONFIG_PACKAGE_(luci-app-oaf|kmod-oaf|appfilter)=' .config || { echo 'CONFIG_LOST'; exit 1; }
           echo '--- resolved build dirs (.packagedeps) ---'
-          grep -hE 'feeds/(packages|luci)/.*(open-app-filter|luci-app-oaf)' tmp/.packagedeps || true
+          grep -hE 'open-app-filter|luci-app-oaf' tmp/.packagedeps || true
 
       - name: 8. build host tools + toolchain (only if cache missed)
         run: |
@@ -159,23 +159,35 @@ jobs:
           fi
           echo "tools+toolchain ready"
 
+      - name: 8b. build kernel (kmod targets need kernel .config + generated headers)
+        run: |
+          cd immortalwrt
+          # 'make target/linux/prepare' only unpacks/patches the kernel; 'compile' is what runs
+          # Kernel/Configure and creates build_dir/.../linux-6.12.91/.config. Without it, any kmod
+          # target dies with: No rule to make target '.../linux-6.12.91/.config'.
+          make -j$(nproc) target/linux/compile V=s > "$GITHUB_WORKSPACE/kernel.log" 2>&1 || { tail -n 120 "$GITHUB_WORKSPACE/kernel.log"; exit 1; }
+          KDIR=$(ls -d build_dir/target-*/linux-*/linux-* 2>/dev/null | head -n1)
+          echo "KDIR=$KDIR"
+          test -f "$KDIR/.config" && echo "kernel .config ready"
+          echo "kernel build ok"
+
       - name: 9. compile oaf / appfilter / luci-app-oaf + per-package RESULT
         run: |
           cd immortalwrt
           LOG="$GITHUB_WORKSPACE/check.log"
           : > "$LOG"
 
-          BD_FEED=$(grep -hE 'feeds/packages/.*open-app-filter' tmp/.packagedeps | head -n1 | sed 's/.*+= *//')
-          BD_LUCI=$(grep -hE 'feeds/luci/.*luci-app-oaf' tmp/.packagedeps | head -n1 | sed 's/.*+= *//')
+          BD_FEED=$(grep -hE 'feeds/packages/[^ ]*open-app-filter' tmp/.packagedeps | head -n1 | sed 's/.*+= *//')
+          BD_LUCI=$(grep -hE 'luci-app-oaf' tmp/.packagedeps | head -n1 | sed 's/.*+= *//')
           echo "resolved BD_FEED=${BD_FEED:-?} BD_LUCI=${BD_LUCI:-?}"
           # The FEED package dir is open-app-filter; "oaf"/"appfilter" are package NAMES, not
           # build dirs. package/oaf/compile would build the vendored clone, not the feed kmod.
+          # luci-app-oaf only exists in the vendored clone -> package/OpenAppFilter/luci-app-oaf.
           FEED_TARGETS="package/feeds/packages/open-app-filter/compile"
           [ -n "$BD_FEED" ] && FEED_TARGETS="package/$BD_FEED/compile $FEED_TARGETS"
           FEED_TARGETS="$FEED_TARGETS package/feeds/packages/net/open-app-filter/compile"
-          LUCI_TARGETS="package/feeds/luci/luci-app-oaf/compile"
+          LUCI_TARGETS="package/OpenAppFilter/luci-app-oaf/compile package/luci-app-oaf/compile"
           [ -n "$BD_LUCI" ] && LUCI_TARGETS="package/$BD_LUCI/compile $LUCI_TARGETS"
-          LUCI_TARGETS="$LUCI_TARGETS package/feeds/luci/applications/luci-app-oaf/compile"
 
           build_first_valid() {  # $1=label $2=rc-var-name, rest=candidate top-level targets
             local label="$1" rcvar="$2"; shift 2
@@ -251,10 +263,13 @@ jobs:
 
           if [ "$FAIL" = "1" ]; then exit 1; fi
 
-      - name: 10. upload check.log
+      - name: 10. upload logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: verify-oaf-log
-          path: check.log
+          path: |
+            check.log
+            kernel.log
+            prep.log
           retention-days: 7
