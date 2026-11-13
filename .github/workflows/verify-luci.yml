@@ -20,6 +20,9 @@ jobs:
     timeout-minutes: 150
 
     steps:
+      - name: 0. checkout repo (provides .github/oaf-patch.py used by the real build)
+        uses: actions/checkout@v4
+
       - name: 1. free disk space
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost /opt/hostedtoolcache || true
@@ -107,15 +110,12 @@ jobs:
           mkdir -p feeds/packages/utils/attr/patches
           echo 'LS0tIGEvdG9vbHMvYXR0ci5jCisrKyBiL3Rvb2xzL2F0dHIuYwpAQCAtMTcsNiArMTcsNyBAQAogICovCiAKICNpbmNsdWRlICJjb25maWcuaCIKKyNpbmNsdWRlIDxsaWJnZW4uaD4KIAogI2luY2x1ZGUgPHN5cy90eXBlcy5oPgogI2luY2x1ZGUgPHN5cy9wYXJhbS5oPgo=' | base64 -d > feeds/packages/utils/attr/patches/100-libgen.patch
 
-      - name: 3c. patch feed OAF package (warnings stay warnings)
+      - name: 3c. patch feed OAF package (define BEFORE eval + forgiving ccflags)
         run: |
           cd immortalwrt
-          F=feeds/packages/net/open-app-filter/Makefile
-          if [ -f "$F" ] && ! grep -q OAFLOCALFIX "$F"; then
-            echo 'IyBPQUZMT0NBTEZJWDogT0FGIGRyaXZlciBjb2RlIGZyb20gMjAyNi0wNCBoYXMgbWFueSBHQ0MxNCB3YXJuaW5nczsga2VlcCB0aGVtIHdhcm5pbmdzCktDRkxBR1MgKz0gLVduby1lcnJvciAtV25vLWVycm9yPW1pc3NpbmctcHJvdG90eXBlcyAtV25vLWVycm9yPXVudXNlZC12YXJpYWJsZSAtV25vLWVycm9yPXVudXNlZC1idXQtc2V0LXZhcmlhYmxlIC1Xbm8tZXJyb3I9Zm9ybWF0IC1Xbm8tZXJyb3I9c3RyaWN0LXByb3RvdHlwZXMKCmRlZmluZSBCdWlsZC9QcmVwYXJlCgkkKGNhbGwgQnVpbGQvUHJlcGFyZS9EZWZhdWx0KQoJZm9yIGYgaW4gJChQS0dfQlVJTERfRElSKS9vYWYvc3JjLyouYzsgZG8gXAoJCXNlZCAtaSAnMWkgI3ByYWdtYSBHQ0MgZGlhZ25vc3RpYyBpZ25vcmVkICItV21pc3NpbmctcHJvdG90eXBlcyInICQkZjsgXAoJCXNlZCAtaSAnMWkgI3ByYWdtYSBHQ0MgZGlhZ25vc3RpYyBpZ25vcmVkICItV3VudXNlZC12YXJpYWJsZSInICQkZjsgXAoJCXNlZCAtaSAnMWkgI3ByYWdtYSBHQ0MgZGlhZ25vc3RpYyBpZ25vcmVkICItV3VudXNlZC1idXQtc2V0LXZhcmlhYmxlIicgJCRmOyBcCgkJc2VkIC1pICcxaSAjcHJhZ21hIEdDQyBkaWFnbm9zdGljIGlnbm9yZWQgIi1XZm9ybWF0IicgJCRmOyBcCglkb25lCmVuZGVm' | base64 -d >> "$F"
-            echo "OAF feed patched"
-          fi
-          tail -n 14 "$F"
+          # same idempotent patcher the real build uses (.github/oaf-patch.py from this repo)
+          python3 ../.github/oaf-patch.py feeds/packages/net/open-app-filter/Makefile
+          grep -n -A3 OAF-M28C-WARN-FIX feeds/packages/net/open-app-filter/Makefile | head -12
 
       - name: 4. OAF pinned + vendor argon/fancontrol
         run: |
@@ -125,6 +125,9 @@ jobs:
           git remote add origin https://github.com/destan19/OpenAppFilter.git
           git fetch --depth 1 origin 569f93bfd56afc3ae8c21f13fc973926ff6629a5
           git checkout -q FETCH_HEAD
+          printf '\nsubdir-ccflags-y += -Wno-error -Wno-error=missing-prototypes -Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-error=format -Wno-error=strict-prototypes\n' >> oaf/Makefile
+          printf '\nccflags-y += -Wno-error -Wno-error=missing-prototypes -Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-error=format -Wno-error=strict-prototypes\n' >> oaf/src/Makefile
+          tail -n 2 oaf/src/Makefile
           cd ../..
           git clone https://github.com/jerrykuku/luci-theme-argon.git /tmp/argon-theme
           git -C /tmp/argon-theme checkout -q 3c8dc64bca054be0c184dc1dc9847b249710a466
