@@ -110,6 +110,9 @@ jobs:
           git clone --depth 1 https://github.com/immortalwrt/packages.git /tmp/ipkgs
           cp -r /tmp/ipkgs/utils/fancontrol package/fancontrol
           rm -rf package/luci-app-fancontrol/.git package/fancontrol/.git
+          # vendored from feed master: relative include ../../luci.mk breaks outside feed dir
+          sed -i "s#include ../../luci.mk#include $(TOPDIR)/feeds/luci/luci.mk#" package/luci-app-fancontrol/Makefile
+          [ -f package/luci-app-argon-config/Makefile ] && sed -i "s#include ../../luci.mk#include $(TOPDIR)/feeds/luci/luci.mk#" package/luci-app-argon-config/Makefile
           ls package/luci-theme-argon/Makefile package/luci-app-argon-config/Makefile package/luci-app-fancontrol/Makefile package/fancontrol/Makefile
 
       - name: 5. write .config
