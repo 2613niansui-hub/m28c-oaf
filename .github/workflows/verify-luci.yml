@@ -2,6 +2,11 @@ name: Verify LuCI theme/apps (M28C 6.12)
 
 on:
   workflow_dispatch:
+    inputs:
+      prep_cache_key:
+        description: exact verify-matrix prepare cache key to reuse (blank = full build)
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -44,8 +49,9 @@ jobs:
             immortalwrt/build_dir/host
             immortalwrt/build_dir/hostpkg
             immortalwrt/build_dir/toolchain-aarch64_generic_gcc-14.3.0_musl
-          key: m28c-prep-${{ github.run_id }}
+          key: ${{ inputs.prep_cache_key || format('m28c-prep-{0}', github.run_id) }}
           restore-keys: |
+            m28c-prep-v2-
             m28c-prep-
 
       - name: 3. clone tree + pinned feeds
