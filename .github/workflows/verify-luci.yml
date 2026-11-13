@@ -33,15 +33,17 @@ jobs:
       - name: 2b. restore cached staging_dir/dl/feeds (fast path; full build if miss)
         uses: actions/cache/restore@v4
         with:
+          # NOTE: actions/cache version-hashes this exact path list, so it must match
+          # .github/workflows/verify-matrix.yml (prepare save step) byte for byte.
           path: |
             immortalwrt/staging_dir
             immortalwrt/dl
             immortalwrt/feeds
             immortalwrt/.config
+            immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8
             immortalwrt/build_dir/host
             immortalwrt/build_dir/hostpkg
-            immortalwrt/build_dir/toolchain-*
-            immortalwrt/build_dir/target-*/linux-*
+            immortalwrt/build_dir/toolchain-aarch64_generic_gcc-14.3.0_musl
           key: m28c-prep-${{ github.run_id }}
           restore-keys: |
             m28c-prep-
@@ -66,6 +68,12 @@ jobs:
           for f in target/linux/generic/config-6.12 target/linux/rockchip/config-6.12; do
             [ -f "$f" ] && grep -q "CONFIG_WERROR" "$f" || printf '# CONFIG_WERROR is not set\n' >> "$f"
           done
+
+      - name: 3d. touch restored build stamps (git checkout mtime must not trigger rebuilds)
+        run: |
+          cd immortalwrt
+          find staging_dir build_dir -name '.built*' -o -name '.configured*' -o -name '.prepared*' 2>/dev/null | xargs -r touch
+          echo "stamps touched: $(find staging_dir build_dir -name '.built*' 2>/dev/null | wc -l) built-stamps"
 
       - name: 3b. attr 2.5.2 + libgen patch
         run: |
