@@ -155,14 +155,31 @@ jobs:
           make -j$(nproc) tools/install toolchain/install V=s > "$GITHUB_WORKSPACE/prep.log" 2>&1 || { tail -n 80 "$GITHUB_WORKSPACE/prep.log"; exit 1; }
           echo "tools+toolchain ok"
 
+      - name: 6b. build kernel first (qmodem/luci-app-qmodem-next DEPEND on kmod-*, per-package compile does not prepare linux .config)
+        run: |
+          cd immortalwrt
+          make -j$(nproc) target/linux/compile V=s > "$GITHUB_WORKSPACE/kernel.log" 2>&1 || { tail -n 80 "$GITHUB_WORKSPACE/kernel.log"; exit 1; }
+          echo "kernel ok"
+          ls -l build_dir/target-*/linux-rockchip_armv8/linux-*/.config
+
       - name: 7. compile QModem packages one by one
         run: |
           cd immortalwrt
           : > "$GITHUB_WORKSPACE/check.log"
-          for pkg in libqmodem-sms ubus-at-daemon tom_modem qmodem-smsd modem_scan sms-forwarder-next qmodem luci-app-qmodem-next; do
-            echo "===== $pkg =====" | tee -a "$GITHUB_WORKSPACE/check.log"
-            echo "=== $(date -u +%FT%TZ) start $pkg ===" >> "$GITHUB_WORKSPACE/check.log"
-            if make -j$(nproc) "package/$pkg/compile" V=s >>"$GITHUB_WORKSPACE/check.log" 2>&1; then
+          for spec in \
+            libqmodem-sms:libqmodem-sms \
+            ubus-at-daemon:ubus_at_daemon \
+            tom_modem:tom_modem \
+            qmodem-smsd:qmodem_smsd \
+            modem_scan:modem_scan \
+            sms-forwarder-next:sms_forwarder_next \
+            qmodem:qmodem \
+            luci-app-qmodem-next:luci-app-qmodem-next; do
+            pkg="${spec%%:*}"
+            dir="${spec##*:}"
+            echo "===== $pkg (feed dir: $dir) =====" | tee -a "$GITHUB_WORKSPACE/check.log"
+            echo "=== $(date -u +%FT%TZ) start $pkg -> package/feeds/qmodem/$dir/compile ===" >> "$GITHUB_WORKSPACE/check.log"
+            if make -j$(nproc) "package/feeds/qmodem/$dir/compile" V=s >>"$GITHUB_WORKSPACE/check.log" 2>&1; then
               echo "RESULT_OK $pkg" | tee -a "$GITHUB_WORKSPACE/check.log"
             else
               echo "RESULT_FAIL $pkg" | tee -a "$GITHUB_WORKSPACE/check.log"
@@ -186,4 +203,5 @@ jobs:
           path: |
             check.log
             prep.log
+            kernel.log
           retention-days: 7
