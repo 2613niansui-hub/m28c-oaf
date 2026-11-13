@@ -1,1 +1,400 @@
-no log
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-nfnetlink/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-nfnetlink_installed
+echo "kmod-nfnetlink" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-nft-core/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-nft-core_installed
+echo "kmod-nft-core" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-nft-nat/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-nft-nat_installed
+echo "kmod-nft-nat" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-nft-offload/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-nft-offload_installed
+echo "kmod-nft-offload" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-nft-fib/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-nft-fib_installed
+echo "kmod-nft-fib" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-nft-socket/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-nft-socket_installed
+echo "kmod-nft-socket" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-nft-tproxy/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-nft-tproxy_installed
+echo "kmod-nft-tproxy" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-tun/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-tun_installed
+echo "kmod-tun" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-slhc/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-slhc_installed
+echo "kmod-slhc" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-ppp/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-ppp_installed
+echo "kmod-ppp" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-pppox/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-pppox_installed
+echo "kmod-pppox" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-pppoe/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-pppoe_installed
+echo "kmod-pppoe" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-nls-base/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-nls-base_installed
+echo "kmod-nls-base" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-nls-cp437/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-nls-cp437_installed
+echo "kmod-nls-cp437" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-nls-iso8859-1/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-nls-iso8859-1_installed
+echo "kmod-nls-iso8859-1" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-nls-utf8/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-nls-utf8_installed
+echo "kmod-nls-utf8" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-usb-common/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-usb-common_installed
+echo "kmod-usb-common" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-usb-core/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-usb-core_installed
+echo "kmod-usb-core" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-usb-ehci/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-usb-ehci_installed
+echo "kmod-usb-ehci" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-usb2/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-usb2_installed
+echo "kmod-usb2" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-usb-acm/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-usb-acm_installed
+echo "kmod-usb-acm" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-usb-wdm/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-usb-wdm_installed
+echo "kmod-usb-wdm" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-usb-serial/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-usb-serial_installed
+echo "kmod-usb-serial" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-usb-serial-wwan/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-usb-serial-wwan_installed
+echo "kmod-usb-serial-wwan" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-usb-serial-option/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-usb-serial-option_installed
+echo "kmod-usb-serial-option" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-usb-serial-qualcomm/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-usb-serial-qualcomm_installed
+echo "kmod-usb-serial-qualcomm" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-usb-storage/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-usb-storage_installed
+echo "kmod-usb-storage" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-usb-storage-uas/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-usb-storage-uas_installed
+echo "kmod-usb-storage-uas" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-usb-net/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-usb-net_installed
+echo "kmod-usb-net" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-usb-net-cdc-ether/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-usb-net-cdc-ether_installed
+echo "kmod-usb-net-cdc-ether" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-usb-net-qmi-wwan/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-usb-net-qmi-wwan_installed
+echo "kmod-usb-net-qmi-wwan" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-usb-net-rndis/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-usb-net-rndis_installed
+echo "kmod-usb-net-rndis" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-usb-net-cdc-mbim/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-usb-net-cdc-mbim_installed
+echo "kmod-usb-net-cdc-mbim" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-usb-net-cdc-ncm/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-usb-net-cdc-ncm_installed
+echo "kmod-usb-net-cdc-ncm" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-usb-net-huawei-cdc-ncm/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-usb-net-huawei-cdc-ncm_installed
+echo "kmod-usb-net-huawei-cdc-ncm" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-usb3/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-usb3_installed
+echo "kmod-usb3" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/packages/.pkgdir/kmod-usb-xhci-hcd/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-usb-xhci-hcd_installed
+echo "kmod-usb-xhci-hcd" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
+make[3]: Leaving directory '/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/package/kernel/linux'
+time: package/kernel/linux/compile#7.12#3.63#9.85
+make[3]: Entering directory '/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/package/OpenAppFilter/oaf'
+mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
+SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/oaf/.pkgdir/kmod-oaf/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-oaf_installed
+echo "kmod-oaf" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/oaf.default.install
+make[3]: Leaving directory '/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/package/OpenAppFilter/oaf'
+time: package/OpenAppFilter/oaf/compile#0.17#0.10#0.26
+make[3]: Entering directory '/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/feeds/packages/net/open-app-filter'
+rm -f /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/.built
+touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/.built_check
+make -C /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/linux-6.12.91 KCFLAGS="-fmacro-prefix-map=/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl=target-aarch64_generic_musl -fno-caller-saves " HOSTCFLAGS="-O2 -I/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/host/include -I/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/hostpkg/include -I/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/host/include -Wall -Wmissing-prototypes -Wstrict-prototypes" CROSS_COMPILE="aarch64-openwrt-linux-musl-" ARCH="arm64" KBUILD_HAVE_NLS=no KBUILD_BUILD_USER="" KBUILD_BUILD_HOST="" KBUILD_BUILD_TIMESTAMP="Tue May 26 08:30:40 2026" KBUILD_BUILD_VERSION="0" KBUILD_HOSTLDFLAGS="-L/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/host/lib" CONFIG_SHELL="bash" V=''  cmd_syscalls= KBUILD_EXTRA_SYMBOLS="/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/symvers/gpio-button-hotplug.symvers /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/symvers/oaf.symvers /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/symvers/qmi_wwan_f.symvers /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/symvers/qmi_wwan_q.symvers /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/symvers/qmi_wwan_s.symvers" CC="aarch64-openwrt-linux-musl-gcc" KERNELRELEASE=6.12.91  M="/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src" modules
+make[4]: Entering directory '/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/linux-6.12.91'
+  CC [M]  /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.o
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:71:7: error: no previous prototype for 'ipv6_to_str' [-Werror=missing-prototypes]
+   71 | char *ipv6_to_str(const struct in6_addr *addr, char *str)
+      |       ^~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:83:5: error: no previous prototype for '__add_app_feature' [-Werror=missing-prototypes]
+   83 | int __add_app_feature(char *feature, int appid, char *name, int proto, int src_port,
+      |     ^~~~~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:152:5: error: no previous prototype for 'validate_range_value' [-Werror=missing-prototypes]
+  152 | int validate_range_value(char *range_str)
+      |     ^~~~~~~~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:173:5: error: no previous prototype for 'parse_range_value' [-Werror=missing-prototypes]
+  173 | int parse_range_value(char *range_str, range_value_t *range)
+      |     ^~~~~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:210:5: error: no previous prototype for 'parse_port_info' [-Werror=missing-prototypes]
+  210 | int parse_port_info(char *port_str, port_info_t *info)
+      |     ^~~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:242:5: error: no previous prototype for 'af_match_port' [-Werror=missing-prototypes]
+  242 | int af_match_port(port_info_t *info, int port)
+      |     ^~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:279:5: error: no previous prototype for 'add_app_feature' [-Werror=missing-prototypes]
+  279 | int add_app_feature(int appid, char *name, char *feature)
+      |     ^~~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c: In function 'add_app_feature':
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:290:13: error: unused variable 'dst_port' [-Werror=unused-variable]
+  290 |         int dst_port = 0;
+      |             ^~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c: At top level:
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:376:6: error: no previous prototype for 'af_init_feature' [-Werror=missing-prototypes]
+  376 | void af_init_feature(char *feature_str)
+      |      ^~~~~~~~~~~~~~~
+In file included from ./include/asm-generic/bug.h:22,
+                 from ./arch/arm64/include/asm/bug.h:26,
+                 from ./include/linux/bug.h:5,
+                 from ./arch/arm64/include/asm/cpufeature.h:24,
+                 from ./arch/arm64/include/asm/hwcap.h:9,
+                 from ./arch/arm64/include/asm/arch_timer.h:12,
+                 from ./arch/arm64/include/asm/timex.h:8,
+                 from ./include/linux/timex.h:67,
+                 from ./include/linux/time32.h:13,
+                 from ./include/linux/time.h:60,
+                 from ./include/linux/stat.h:19,
+                 from ./include/linux/module.h:13,
+                 from /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:6:
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c: In function 'af_init_feature':
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:423:40: error: format '%d' expects argument of type 'int', but argument 2 has type 'char *' [-Werror=format=]
+  423 |                                 printk("error, feature len error %d\n", p - len);
+      |                                        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~  ~~~~~~~
+      |                                                                           |
+      |                                                                           char *
+./include/linux/printk.h:468:25: note: in definition of macro 'printk_index_wrap'
+  468 |                 _p_func(_fmt, ##__VA_ARGS__);                           \
+      |                         ^~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:423:33: note: in expansion of macro 'printk'
+  423 |                                 printk("error, feature len error %d\n", p - len);
+      |                                 ^~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:423:67: note: format string is defined here
+  423 |                                 printk("error, feature len error %d\n", p - len);
+      |                                                                  ~^
+      |                                                                   |
+      |                                                                   int
+      |                                                                  %s
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:436:32: error: format '%d' expects argument of type 'int', but argument 2 has type 'char *' [-Werror=format=]
+  436 |                         printk("error, feature len error %d\n", p - len);
+      |                                ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~  ~~~~~~~
+      |                                                                   |
+      |                                                                   char *
+./include/linux/printk.h:468:25: note: in definition of macro 'printk_index_wrap'
+  468 |                 _p_func(_fmt, ##__VA_ARGS__);                           \
+      |                         ^~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:436:25: note: in expansion of macro 'printk'
+  436 |                         printk("error, feature len error %d\n", p - len);
+      |                         ^~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:436:59: note: format string is defined here
+  436 |                         printk("error, feature len error %d\n", p - len);
+      |                                                          ~^
+      |                                                           |
+      |                                                           int
+      |                                                          %s
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c: At top level:
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:450:6: error: no previous prototype for 'load_feature_buf_from_file' [-Werror=missing-prototypes]
+  450 | void load_feature_buf_from_file(char **config_buf)
+      |      ^~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:497:5: error: no previous prototype for 'load_feature_config' [-Werror=missing-prototypes]
+  497 | int load_feature_config(void)
+      |     ^~~~~~~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:556:6: error: no previous prototype for 'af_add_feature_msg_handle' [-Werror=missing-prototypes]
+  556 | void af_add_feature_msg_handle(char *data, int len)
+      |      ^~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:606:5: error: no previous prototype for 'parse_flow_proto' [-Werror=missing-prototypes]
+  606 | int parse_flow_proto(struct sk_buff *skb, flow_info_t *flow)
+      |     ^~~~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c: In function 'parse_flow_proto':
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:612:25: error: unused variable 'ct' [-Werror=unused-variable]
+  612 |         struct nf_conn *ct = NULL;
+      |                         ^~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c: At top level:
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:663:5: error: no previous prototype for 'check_domain' [-Werror=missing-prototypes]
+  663 | int check_domain(char *h, int len)
+      |     ^~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:679:5: error: no previous prototype for 'dpi_https_proto' [-Werror=missing-prototypes]
+  679 | int dpi_https_proto(flow_info_t *flow)
+      |     ^~~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:735:6: error: no previous prototype for 'dpi_http_proto' [-Werror=missing-prototypes]
+  735 | void dpi_http_proto(flow_info_t *flow)
+      |      ^~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:871:7: error: no previous prototype for 'k_memstr' [-Werror=missing-prototypes]
+  871 | char *k_memstr(char *data, char *str, int size)
+      |       ^~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:883:5: error: no previous prototype for 'af_match_by_pos' [-Werror=missing-prototypes]
+  883 | int af_match_by_pos(flow_info_t *flow, af_feature_node_t *node)
+      |     ^~~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:930:5: error: no previous prototype for 'af_match_by_url' [-Werror=missing-prototypes]
+  930 | int af_match_by_url(flow_info_t *flow, af_feature_node_t *node)
+      |     ^~~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:976:5: error: no previous prototype for 'af_match_one' [-Werror=missing-prototypes]
+  976 | int af_match_one(flow_info_t *flow, af_feature_node_t *node)
+      |     ^~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:1020:5: error: no previous prototype for 'af_match_quic' [-Werror=missing-prototypes]
+ 1020 | int af_match_quic(flow_info_t *flow)
+      |     ^~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:1058:5: error: no previous prototype for 'match_feature' [-Werror=missing-prototypes]
+ 1058 | int match_feature(flow_info_t *flow)
+      |     ^~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:1083:5: error: no previous prototype for 'match_app_filter_user' [-Werror=missing-prototypes]
+ 1083 | int match_app_filter_user(af_client_info_t *client){
+      |     ^~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:1098:5: error: no previous prototype for 'match_app_filter_rule' [-Werror=missing-prototypes]
+ 1098 | int match_app_filter_rule(int appid, af_client_info_t *client)
+      |     ^~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:1139:5: error: no previous prototype for 'af_update_client_app_info' [-Werror=missing-prototypes]
+ 1139 | int af_update_client_app_info(af_client_info_t *node, int app_id, int drop)
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:1162:5: error: no previous prototype for 'af_match_bcast_packet' [-Werror=missing-prototypes]
+ 1162 | int af_match_bcast_packet(flow_info_t *f)
+      |     ^~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:1171:5: error: no previous prototype for 'af_match_local_packet' [-Werror=missing-prototypes]
+ 1171 | int af_match_local_packet(flow_info_t *f)
+      |     ^~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:1182:5: error: no previous prototype for 'update_url_visiting_info' [-Werror=missing-prototypes]
+ 1182 | int update_url_visiting_info(af_client_info_t *client, flow_info_t *flow)
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:1207:5: error: no previous prototype for 'dpi_main' [-Werror=missing-prototypes]
+ 1207 | int dpi_main(struct sk_buff *skb, flow_info_t *flow)
+      |     ^~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:1216:6: error: no previous prototype for 'af_get_smac' [-Werror=missing-prototypes]
+ 1216 | void af_get_smac(struct sk_buff *skb, u_int8_t *smac)
+      |      ^~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:1225:5: error: no previous prototype for 'is_ipv4_broadcast' [-Werror=missing-prototypes]
+ 1225 | int is_ipv4_broadcast(uint32_t ip)
+      |     ^~~~~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:1230:5: error: no previous prototype for 'is_ipv4_multicast' [-Werror=missing-prototypes]
+ 1230 | int is_ipv4_multicast(uint32_t ip)
+      |     ^~~~~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:1234:5: error: no previous prototype for 'af_check_bcast_ip' [-Werror=missing-prototypes]
+ 1234 | int af_check_bcast_ip(flow_info_t *f)
+      |     ^~~~~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:1255:11: error: no previous prototype for 'check_app_action_changed' [-Werror=missing-prototypes]
+ 1255 | u_int32_t check_app_action_changed(int action, u_int32_t app_id, af_client_info_t *client)
+      |           ^~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c: In function 'check_app_action_changed':
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:1257:18: error: unused variable 'drop' [-Werror=unused-variable]
+ 1257 |         u_int8_t drop = 0;
+      |                  ^~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c: At top level:
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:1276:11: error: no previous prototype for 'app_filter_hook_bypass_handle' [-Werror=missing-prototypes]
+ 1276 | u_int32_t app_filter_hook_bypass_handle(struct sk_buff *skb, struct net_device *dev)
+      |           ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:1449:11: error: no previous prototype for 'app_filter_hook_gateway_handle' [-Werror=missing-prototypes]
+ 1449 | u_int32_t app_filter_hook_gateway_handle(struct sk_buff *skb, struct net_device *dev)
+      |           ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c: In function 'app_filter_hook_gateway_handle':
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:1460:18: error: unused variable 'drop' [-Werror=unused-variable]
+ 1460 |         u_int8_t drop = 0;
+      |                  ^~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:1453:18: error: unused variable 'smac' [-Werror=unused-variable]
+ 1453 |         u_int8_t smac[ETH_ALEN];
+      |                  ^~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c: At top level:
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:1779:6: error: no previous prototype for 'init_oaf_timer' [-Werror=missing-prototypes]
+ 1779 | void init_oaf_timer(void)
+      |      ^~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:1790:6: error: no previous prototype for 'fini_oaf_timer' [-Werror=missing-prototypes]
+ 1790 | void fini_oaf_timer(void)
+      |      ^~~~~~~~~~~~~~
+/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.c:1894:5: error: no previous prototype for 'netlink_oaf_init' [-Werror=missing-prototypes]
+ 1894 | int netlink_oaf_init(void)
+      |     ^~~~~~~~~~~~~~~~
+cc1: all warnings being treated as errors
+make[6]: *** [scripts/Makefile.build:229: /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src/app_filter.o] Error 1
+make[5]: *** [/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/linux-6.12.91/Makefile:1958: /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/oaf/src] Error 2
+make[4]: *** [Makefile:224: __sub-make] Error 2
+make[4]: Leaving directory '/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/linux-6.12.91'
+make[3]: *** [Makefile:71: /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/.built] Error 2
+make[3]: Leaving directory '/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/feeds/packages/net/open-app-filter'
+time: package/feeds/packages/open-app-filter/compile#1.29#0.32#1.59
+    ERROR: package/feeds/packages/open-app-filter failed to build.
+make[2]: *** [package/Makefile:198: package/feeds/packages/open-app-filter/compile] Error 1
+make[2]: Leaving directory '/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt'
+make[1]: *** [package/Makefile:192: /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/stamp/.package_compile] Error 2
+make[1]: Leaving directory '/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt'
+make: *** [/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/include/toplevel.mk:233: world] Error 2
