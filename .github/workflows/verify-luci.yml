@@ -30,6 +30,18 @@ jobs:
             libpython3-dev rsync swig unzip zlib1g-dev file wget \
             libelf-dev bc device-tree-compiler
 
+      - name: 2b. restore cached staging_dir/dl/feeds (fast path; full build if miss)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            immortalwrt/staging_dir
+            immortalwrt/dl
+            immortalwrt/feeds
+            immortalwrt/.config
+          key: m28c-prep-v1-${{ github.run_id }}
+          restore-keys: |
+            m28c-prep-v1-
+
       - name: 3. clone tree + pinned feeds
         run: |
           git init immortalwrt
@@ -100,10 +112,19 @@ jobs:
             echo "REMOVE feed duplicate so the vendored master compat/ package is the one built"
             rm -rf package/feeds/luci/luci-app-argon-config
           fi
+          echo "=== rewrite relative luci.mk include for root-vendored luci apps ==="
+          for m in package/*/Makefile; do
+            [ -f "$m" ] || continue
+            if grep -q '^include \.\./\.\./luci\.mk' "$m"; then
+              echo "FIX $m : ../../luci.mk -> \$(TOPDIR)/feeds/luci/luci.mk"
+              sed -i 's|^include \.\./\.\./luci\.mk$|include $(TOPDIR)/feeds/luci/luci.mk|' "$m"
+            fi
+          done
           echo "=== vendored package versions ==="
           for p in luci-theme-argon luci-app-argon-config luci-app-fancontrol fancontrol; do
             echo "--- package/$p ---"
             grep -hE '^(PKG_NAME|PKG_VERSION|PKG_RELEASE|LUCI_DEPENDS)' "package/$p/Makefile" || true
+            grep -n 'luci\.mk' "package/$p/Makefile" || true
           done
 
       - name: 5. config + defconfig
