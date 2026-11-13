@@ -133,6 +133,11 @@ jobs:
           src-git video      https://github.com/openwrt/video.git^393e8eac5b45c5a1dc455ffe0e19e7651ad508a3
           src-git qmodem     https://github.com/FUjr/QModem.git^0988085b887346ae9477ef2e77abe2f797bd2c4a
           EOF
+          # the restored cache may carry the PREVIOUS job's local feed edits (old oaf/attr patches);
+          # reset them so feeds update + our own patch always apply to pristine pinned content
+          for d in feeds/*/; do
+            if [ -d "$d/.git" ]; then git -C "$d" reset --hard -q; git -C "$d" clean -fdq || true; fi
+          done
           ./scripts/feeds update -a
           ./scripts/feeds install -a
           # OAF 的 6.12 驱动代码有大量 -Wmissing-prototypes 警告，内核默认 CONFIG_WERROR=y 会把它当错误
@@ -168,6 +173,9 @@ jobs:
           cd immortalwrt
           python3 ../.github/oaf-patch.py feeds/packages/net/open-app-filter/Makefile
           grep -n -A3 OAFLOCALFIX feeds/packages/net/open-app-filter/Makefile | head -12
+          grep -q 'OAF-M28C-WARN-FIX' feeds/packages/net/open-app-filter/Makefile \
+            || { echo "FATAL: OAF -Werror suppression block missing after patch"; exit 1; }
+          echo "OAF warn-fix block present in feed Makefile"
           D=$(( $(date +%s) - T0 )); echo "$D" > "$GITHUB_WORKSPACE/timing/03c_oafpatch.sec"; echo "STEP 3c oaf-patch: ${D}s"
 
       - name: 4. add OpenAppFilter (pinned 569f93bf)
