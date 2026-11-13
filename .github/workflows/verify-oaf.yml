@@ -1,0 +1,243 @@
+name: Verify OAF (kmod-oaf + appfilter + luci-app-oaf)
+
+# 单区深度验证：在 ImmortalWrt a302626e / kernel 6.12.91 下只编译 OAF 三件套。
+# 复用 verify-matrix prepare 缓存的 staging_dir/dl/feeds，缓存缺失时回退为完整 tools+toolchain 编译。
+on:
+  workflow_dispatch:
+    inputs:
+      cache_tag:
+        description: toolchain cache tag (verify-matrix prepare cache prefix)
+        required: false
+        default: v1
+
+permissions:
+  contents: read
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  verify-oaf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+
+    steps:
+      - name: 1. free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost /opt/hostedtoolcache || true
+          sudo apt-get clean
+          df -h /
+
+      - name: 2. install build deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential clang flex bison g++ gawk \
+            gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev \
+            python3 python3-setuptools python3-pyelftools python3-yaml \
+            libpython3-dev rsync swig unzip zlib1g-dev file wget \
+            libelf-dev bc device-tree-compiler
+
+      - name: 3. restore toolchain cache (from verify-matrix prepare, best effort)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            immortalwrt/staging_dir
+            immortalwrt/dl
+            immortalwrt/feeds
+            immortalwrt/.config
+          key: m28c-prep-${{ inputs.cache_tag }}-${{ github.run_id }}
+          restore-keys: |
+            m28c-prep-${{ inputs.cache_tag }}-
+            m28c-prep-
+
+      - name: 4. clone tree + pinned feeds
+        run: |
+          git init immortalwrt
+          cd immortalwrt
+          git remote add origin https://github.com/immortalwrt/immortalwrt.git
+          git fetch --depth 1 origin a302626ef448242574d00af0acc5ed1ef851cbe3
+          git checkout -q FETCH_HEAD
+          cat > feeds.conf <<'EOF'
+          src-git packages   https://github.com/immortalwrt/packages.git^3714a28d393e14a20c8359f3f640f61ca757636a
+          src-git luci       https://github.com/immortalwrt/luci.git^6bcf30cb319f36414a8dfaffa35b6e249a2cac02
+          src-git routing    https://github.com/openwrt/routing.git^776e7160636a7f1add27483ac926dadeb248bb65
+          src-git telephony  https://github.com/openwrt/telephony.git^4d8d33a023b24c52cd9443b9dc201fbdfe9c6aef
+          src-git video      https://github.com/openwrt/video.git^393e8eac5b45c5a1dc455ffe0e19e7651ad508a3
+          src-git qmodem     https://github.com/FUjr/QModem.git^0988085b887346ae9477ef2e77abe2f797bd2c4a
+          EOF
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: 5. attr patch + real OAF feed fix (build flags, correct eval order)
+        run: |
+          cd immortalwrt
+          # attr 2.5.2: kernel 6.12 glibc/basename conflict
+          if [ -f feeds/packages/utils/attr/Makefile ]; then
+            sed -i -e 's/^PKG_VERSION:=.*/PKG_VERSION:=2.5.2/' -e 's/^PKG_HASH:=.*/PKG_HASH:=skip/' feeds/packages/utils/attr/Makefile
+            mkdir -p feeds/packages/utils/attr/patches
+            echo 'LS0tIGEvdG9vbHMvYXR0ci5jCisrKyBiL3Rvb2xzL2F0dHIuYwpAQCAtMTcsNiArMTcsNyBAQAogICovCiAKICNpbmNsdWRlICJjb25maWcuaCIKKyNpbmNsdWRlIDxsaWJnZW4uaD4KIAogI2luY2x1ZGUgPHN5cy90eXBlcy5oPgogI2luY2x1ZGUgPHN5cy9wYXJhbS5oPgo=' | base64 -d > feeds/packages/utils/attr/patches/100-libgen.patch
+          fi
+          F=feeds/packages/net/open-app-filter/Makefile
+          # drop the OLD appended block (dead: KCFLAGS is overwritten by include/kernel.mk,
+          # and a define appended AFTER $(eval $(call KernelPackage,...)) is never expanded)
+          sed -i '/^# OAFLOCALFIX/,$d' "$F"
+          python3 - "$F" <<'PY'
+          import sys
+          p = sys.argv[1]
+          src = open(p).read()
+          anchor = '$(eval $(call KernelPackage,oaf))'
+          assert anchor in src, 'anchor $(eval $(call KernelPackage,oaf)) not found in feed Makefile'
+          block = """# OAF-M28C-WARN-FIX: keep GCC-14 / kernel warnings as warnings, never as errors.
+          # MUST be defined BEFORE the KernelPackage/BuildPackage eval lines below: OpenWrt
+          # expands Build/Prepare/Compile while running $(eval ...), so redefining afterwards is dead code.
+          define Build/Prepare
+          \t$(call Build/Prepare/Default)
+          \tsed -i '1i #pragma GCC diagnostic ignored "-Wmissing-prototypes"' $(PKG_BUILD_DIR)/oaf/src/*.c
+          \tsed -i '1i #pragma GCC diagnostic ignored "-Wunused-variable"' $(PKG_BUILD_DIR)/oaf/src/*.c
+          \tsed -i '1i #pragma GCC diagnostic ignored "-Wunused-but-set-variable"' $(PKG_BUILD_DIR)/oaf/src/*.c
+          \tsed -i '1i #pragma GCC diagnostic ignored "-Wformat"' $(PKG_BUILD_DIR)/oaf/src/*.c
+          \tprintf '\\nccflags-y += -Wno-error -Wno-error=missing-prototypes -Wno-error=missing-declarations -Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-error=format -Wno-error=strict-prototypes -Wno-error=implicit-function-declaration -Wno-error=implicit-int -Wno-error=return-mismatch -Wno-error=int-conversion -Wno-error=incompatible-pointer-types\\n' >> $(PKG_BUILD_DIR)/oaf/src/Makefile
+          \tprintf '\\noverride CFLAGS += -Wno-error -Wno-error=implicit-function-declaration -Wno-error=implicit-int -Wno-error=return-mismatch -Wno-error=int-conversion -Wno-error=incompatible-pointer-types\\n' >> $(PKG_BUILD_DIR)/open-app-filter/src/Makefile
+          endef
+          
+          """
+          if 'OAF-M28C-WARN-FIX' not in src:
+              src = src.replace(anchor, block + anchor, 1)
+          open(p, 'w').write(src)
+          print('OAF feed Makefile patched before eval lines')
+          PY
+          echo '--- inserted block ---'
+          sed -n '/OAF-M28C-WARN-FIX/,/^endef/p' "$F"
+          echo '--- tail of feed Makefile ---'
+          tail -n 3 "$F"
+
+      - name: 6. vendor OpenAppFilter clone (provides luci-app-oaf)
+        run: |
+          cd immortalwrt
+          git init package/OpenAppFilter
+          cd package/OpenAppFilter
+          git remote add origin https://github.com/destan19/OpenAppFilter.git
+          git fetch --depth 1 origin 569f93bfd56afc3ae8c21f13fc973926ff6629a5
+          git checkout -q FETCH_HEAD
+          ls luci-app-oaf/Makefile
+
+      - name: 7. config + defconfig
+        run: |
+          cd immortalwrt
+          cat > .config <<'EOF'
+          CONFIG_TARGET_rockchip=y
+          CONFIG_TARGET_rockchip_armv8=y
+          CONFIG_TARGET_rockchip_armv8_DEVICE_widora_mangopi-m28c=y
+          CONFIG_TARGET_ROOTFS_PARTSIZE=512
+          CONFIG_PACKAGE_luci-app-oaf=y
+          CONFIG_PACKAGE_kmod-oaf=y
+          CONFIG_PACKAGE_appfilter=y
+          EOF
+          sed -i 's/^ *//' .config
+          make defconfig >/dev/null
+          grep -E 'CONFIG_PACKAGE_(luci-app-oaf|kmod-oaf|appfilter)=' .config || { echo 'CONFIG_LOST'; exit 1; }
+          echo '--- resolved build dirs (.packagedeps) ---'
+          grep -hE 'feeds/(packages|luci)/.*(open-app-filter|luci-app-oaf)' tmp/.packagedeps || true
+
+      - name: 8. build host tools + toolchain (only if cache missed)
+        run: |
+          cd immortalwrt
+          need=0
+          compgen -G "staging_dir/toolchain-*/bin/*-gcc" >/dev/null || need=1
+          [ -x staging_dir/host/bin/openssl ] || need=1
+          if [ "$need" = "1" ]; then
+            echo "cache miss -> building tools+toolchain"
+            make -j$(nproc) tools/install toolchain/install V=s > "$GITHUB_WORKSPACE/prep.log" 2>&1 || { tail -n 80 "$GITHUB_WORKSPACE/prep.log"; exit 1; }
+          else
+            echo "cache hit -> tools+toolchain reused"
+          fi
+          echo "tools+toolchain ready"
+
+      - name: 9. compile oaf / appfilter / luci-app-oaf + per-package RESULT
+        run: |
+          cd immortalwrt
+          LOG="$GITHUB_WORKSPACE/check.log"
+          : > "$LOG"
+
+          BD_FEED=$(grep -hE 'feeds/packages/.*open-app-filter' tmp/.packagedeps | head -n1 | sed 's/.*+= *//')
+          BD_LUCI=$(grep -hE 'feeds/luci/.*luci-app-oaf' tmp/.packagedeps | head -n1 | sed 's/.*+= *//')
+          [ -n "$BD_FEED" ] || BD_FEED=feeds/packages/open-app-filter
+          [ -n "$BD_LUCI" ] || BD_LUCI=feeds/luci/luci-app-oaf
+          T_FEED="package/$BD_FEED/compile"
+          T_LUCI="package/$BD_LUCI/compile"
+          echo "TARGET feed = $T_FEED"
+          echo "TARGET luci = $T_LUCI"
+
+          FEED_RC=0
+          LUCI_RC=0
+          echo "===== open-app-filter (kmod-oaf + appfilter) =====" >> "$LOG"
+          if make -j$(nproc) "$T_FEED" V=s >> "$LOG" 2>&1; then
+            echo "BUILD_OK open-app-filter (feed)" | tee -a "$LOG"; FEED_RC=0
+          else
+            echo "BUILD_FAIL open-app-filter (feed)" | tee -a "$LOG"; FEED_RC=1
+            tail -n 80 "$LOG"
+          fi
+
+          echo "===== luci-app-oaf =====" >> "$LOG"
+          if make -j$(nproc) "$T_LUCI" V=s >> "$LOG" 2>&1; then
+            echo "BUILD_OK luci-app-oaf" | tee -a "$LOG"; LUCI_RC=0
+          else
+            echo "BUILD_FAIL luci-app-oaf" | tee -a "$LOG"; LUCI_RC=1
+            tail -n 40 "$LOG"
+          fi
+
+          echo "===== artifact check =====" | tee -a "$LOG"
+          KO=$(ls build_dir/target-*/linux-*/open-app-filter-*/oaf/src/oaf.ko 2>/dev/null | head -n1)
+          OAFD=$(ls build_dir/target-*/linux-*/open-app-filter-*/open-app-filter/src/oafd 2>/dev/null | head -n1)
+          PKG_APP=$(ls bin/packages/*/appfilter*.apk bin/packages/*/appfilter*.ipk 2>/dev/null | head -n1)
+          PKG_KO=$(ls bin/packages/*/kmod-oaf*.apk bin/packages/*/kmod-oaf*.ipk 2>/dev/null | head -n1)
+          PKG_LUCI=$(ls bin/packages/*/luci-app-oaf*.apk bin/packages/*/luci-app-oaf*.ipk 2>/dev/null | head -n1)
+          echo "oaf.ko      = ${KO:-MISSING}" | tee -a "$LOG"
+          echo "oafd        = ${OAFD:-MISSING}" | tee -a "$LOG"
+          echo "pkg kmod    = ${PKG_KO:-MISSING}" | tee -a "$LOG"
+          echo "pkg appfilt = ${PKG_APP:-MISSING}" | tee -a "$LOG"
+          echo "pkg luci    = ${PKG_LUCI:-MISSING}" | tee -a "$LOG"
+
+          echo "===== summary =====" | tee -a "$LOG"
+          FAIL=0
+          if [ "$FEED_RC" = "0" ] && { [ -n "$KO" ] || [ -n "$PKG_KO" ]; }; then
+            echo "RESULT_OK kmod-oaf" | tee -a "$LOG"
+          else
+            echo "RESULT_FAIL kmod-oaf" | tee -a "$LOG"; FAIL=1
+          fi
+          if [ "$FEED_RC" = "0" ] && { [ -n "$OAFD" ] || [ -n "$PKG_APP" ]; }; then
+            echo "RESULT_OK appfilter" | tee -a "$LOG"
+          else
+            echo "RESULT_FAIL appfilter" | tee -a "$LOG"; FAIL=1
+          fi
+          if [ "$LUCI_RC" = "0" ]; then
+            echo "RESULT_OK luci-app-oaf" | tee -a "$LOG"
+          else
+            echo "RESULT_FAIL luci-app-oaf" | tee -a "$LOG"; FAIL=1
+          fi
+
+          echo "===== diagnostics =====" | tee -a "$LOG"
+          KDIR=$(ls -d build_dir/target-*/linux-*/linux-* 2>/dev/null | head -n1)
+          echo "KDIR=${KDIR:-none}" | tee -a "$LOG"
+          if [ -n "$KDIR" ] && [ -f "$KDIR/.config" ]; then
+            grep -E '^CONFIG_(WERROR|COMPILE_TEST)=' "$KDIR/.config" | tee -a "$LOG" || echo "no CONFIG_WERROR/compat lines in kernel .config" | tee -a "$LOG"
+          fi
+          CMD=$(ls build_dir/target-*/linux-*/open-app-filter-*/oaf/src/.app_filter.o.cmd 2>/dev/null | head -n1)
+          if [ -n "$CMD" ]; then
+            echo "--- compiler flags seen in $CMD ---" | tee -a "$LOG"
+            tr ' ' '\n' < "$CMD" | grep -E '^-W' | head -n 40 | tee -a "$LOG"
+          fi
+          echo "--- patched oaf/src/Makefile ---" | tee -a "$LOG"
+          tail -n 6 build_dir/target-*/linux-*/open-app-filter-*/oaf/src/Makefile 2>/dev/null | tee -a "$LOG" || true
+          echo "--- patched open-app-filter/src/Makefile ---" | tee -a "$LOG"
+          tail -n 4 build_dir/target-*/linux-*/open-app-filter-*/open-app-filter/src/Makefile 2>/dev/null | tee -a "$LOG" || true
+
+          if [ "$FAIL" = "1" ]; then exit 1; fi
+
+      - name: 10. upload check.log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-oaf-log
+          path: check.log
+          retention-days: 7
