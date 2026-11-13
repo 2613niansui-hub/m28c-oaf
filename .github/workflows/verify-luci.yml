@@ -38,9 +38,13 @@ jobs:
             immortalwrt/dl
             immortalwrt/feeds
             immortalwrt/.config
-          key: m28c-prep-v1-${{ github.run_id }}
+            immortalwrt/build_dir/host
+            immortalwrt/build_dir/hostpkg
+            immortalwrt/build_dir/toolchain-*
+            immortalwrt/build_dir/target-*/linux-*
+          key: m28c-prep-${{ github.run_id }}
           restore-keys: |
-            m28c-prep-v1-
+            m28c-prep-
 
       - name: 3. clone tree + pinned feeds
         run: |
@@ -149,6 +153,7 @@ jobs:
           CONFIG_PACKAGE_adguardhome=y
           CONFIG_PACKAGE_luci-app-adguardhome=y
           CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+          CONFIG_LUCI_LANG_zh_Hans=y
           EOF
           sed -i 's/^ *//' .config
           make defconfig >/dev/null
@@ -159,33 +164,53 @@ jobs:
             grep -q "^CONFIG_PACKAGE_$k=y" .config && echo "CONFIG OK $k" || echo "CONFIG MISSING $k"
           done
 
-      - name: 6. build host tools + toolchain first (needed by package compile)
+      - name: 6. build host tools + toolchain, then kernel (kmod deps need it)
         run: |
           cd immortalwrt
           make -j$(nproc) tools/install toolchain/install V=s > "$GITHUB_WORKSPACE/prep.log" 2>&1 || { tail -n 80 "$GITHUB_WORKSPACE/prep.log"; exit 1; }
           echo "tools+toolchain ok"
+          # luci-app-3ginfo-lite depends on kmod-usb-serial-option and luci-app-oaf on kmod-oaf, so their
+          # compile targets also build those kmod packages. A kmod target fails with
+          # "No rule to make target '.../linux-6.12.91/.config'" unless Kernel/Configure has run, which
+          # only happens for target/linux/* (there is no rule for $(LINUX_DIR)/.config in package context).
+          make -j$(nproc) target/linux/compile V=s > "$GITHUB_WORKSPACE/kernel.log" 2>&1 || { tail -n 120 "$GITHUB_WORKSPACE/kernel.log"; exit 1; }
+          echo "kernel ok"
 
       - name: 7. compile luci/theme/apps one by one
         run: |
           cd immortalwrt
           LOG="$GITHUB_WORKSPACE/check.log"
           : > "$LOG"
-          PKGS="luci-theme-argon luci-app-argon-config fancontrol luci-app-fancontrol \
-                luci-app-cpufreq luci-app-3ginfo-lite luci-app-smartdns luci-app-adguardhome \
-                luci-app-oaf luci-i18n-base-zh-cn"
-          for pkg in $PKGS; do
+          FAIL=0
+          for pkg in luci-theme-argon luci-app-argon-config fancontrol luci-app-fancontrol \
+                     luci-app-cpufreq luci-app-3ginfo-lite luci-app-smartdns luci-app-adguardhome \
+                     luci-app-oaf; do
             echo "===== $pkg =====" | tee -a "$LOG"
             if make -j$(nproc) "package/$pkg/compile" V=s >>"$LOG" 2>&1; then
               echo "RESULT_OK $pkg" | tee -a "$LOG"
             else
               echo "RESULT_FAIL $pkg" | tee -a "$LOG"
+              FAIL=1
             fi
           done
+          # luci-i18n-* are sub-packages of modules/luci-base. OpenWrt only generates per-package make
+          # targets for dirs that scripts/feeds installed a symlink for (package/feeds/luci/luci-base),
+          # so 'package/luci-i18n-base-zh-cn/compile' does not exist; compile the parent dir and then
+          # prove the i18n package artifact was actually produced.
+          echo "===== luci-i18n-base-zh-cn (via package/luci-base/compile) =====" | tee -a "$LOG"
+          I18N_ART="$(make -j$(nproc) package/luci-base/compile V=s >>"$LOG" 2>&1 && ls bin/packages/*/*/luci-i18n-base-zh-cn-*.apk bin/packages/*/*/luci-i18n-base-zh-cn-*.ipk 2>/dev/null | head -n1)" || true
+          if [ -n "$I18N_ART" ]; then
+            echo "i18n artifact: $I18N_ART" | tee -a "$LOG"
+            echo "RESULT_OK luci-i18n-base-zh-cn" | tee -a "$LOG"
+          else
+            echo "RESULT_FAIL luci-i18n-base-zh-cn" | tee -a "$LOG"
+            FAIL=1
+          fi
           echo "===== summary ====="
           grep -E 'RESULT_(OK|FAIL)' "$LOG"
-          if grep -q RESULT_FAIL "$LOG"; then
+          if [ "$FAIL" = "1" ]; then
             echo "===== failure diagnostics ====="
-            grep -nE '^\s*(make|ERROR|error:)|Error [0-9]+|\*\*\*' "$LOG" | tail -n 120 || true
+            grep -nE 'No rule to make target|ERROR:|error:|\*\*\*' "$LOG" | tail -n 120 || true
             exit 1
           fi
           echo "ALL_PACKAGES_OK"
@@ -199,11 +224,13 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      - name: 9. upload prep.log on failure
+      - name: 9. upload prep/kernel logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: verify-luci-prep-log
-          path: prep.log
+          path: |
+            prep.log
+            kernel.log
           if-no-files-found: warn
           retention-days: 7
