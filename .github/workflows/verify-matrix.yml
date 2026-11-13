@@ -6,7 +6,7 @@ on:
       cache_tag:
         description: cache version tag
         required: false
-        default: v1
+        default: v2
 
 permissions:
   contents: read
@@ -42,9 +42,11 @@ jobs:
             immortalwrt/dl
             immortalwrt/feeds
             immortalwrt/.config
+            immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8
           key: m28c-prep-${{ inputs.cache_tag }}-${{ github.run_id }}
           restore-keys: |
             m28c-prep-${{ inputs.cache_tag }}-
+            m28c-prep-v1-
 
       - name: checkout tree + pinned feeds + patches
         run: |
@@ -149,8 +151,20 @@ jobs:
             make download -j8 >/dev/null 2>&1 || true
             echo "prepared ok"
           fi
+      - name: build kernel once (generates .config + headers, cached for all areas)
+        id: kern
+        run: |
+          cd immortalwrt
+          if ls build_dir/target-*/linux-*/linux-*/.config >/dev/null 2>&1; then
+            echo "kernel_built=0" >> "$GITHUB_OUTPUT"
+            echo "kernel restored from cache, skip"
+          else
+            make -j$(nproc) target/linux/compile V=s > /tmp/kernel.log 2>&1 || { tail -n 120 /tmp/kernel.log; exit 1; }
+            echo "kernel_built=1" >> "$GITHUB_OUTPUT"
+            echo "kernel built"
+          fi
       - name: save cache
-        if: steps.prep.outputs.cache_hit == '0'
+        if: steps.prep.outputs.cache_hit == '0' || steps.kern.outputs.kernel_built == '1'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -158,6 +172,7 @@ jobs:
             immortalwrt/dl
             immortalwrt/feeds
             immortalwrt/.config
+            immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8
           key: m28c-prep-${{ inputs.cache_tag }}-${{ github.run_id }}
 
   verify:
@@ -201,9 +216,11 @@ jobs:
             immortalwrt/dl
             immortalwrt/feeds
             immortalwrt/.config
+            immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8
           key: m28c-prep-${{ inputs.cache_tag }}-${{ github.run_id }}
           restore-keys: |
             m28c-prep-${{ inputs.cache_tag }}-
+            m28c-prep-v1-
       - name: checkout tree + pins + patches
         run: |
           git init immortalwrt
@@ -263,7 +280,12 @@ jobs:
         run: |
           cd immortalwrt
           case "${{ matrix.area }}" in
-            oaf|kmods) make -j$(nproc) target/linux/prepare V=s > /tmp/kprepare.log 2>&1 || { tail -n 60 /tmp/kprepare.log; exit 1; } ;;
+            oaf|kmods)
+              if ls build_dir/target-*/linux-*/linux-*/.config >/dev/null 2>&1; then
+                echo "kernel .config restored from cache"
+              else
+                make -j$(nproc) target/linux/compile V=s > /tmp/kprepare.log 2>&1 || { tail -n 100 /tmp/kprepare.log; exit 1; }
+              fi ;;
             *) echo "skip kernel prepare" ;;
           esac
       - name: compile area packages
