@@ -90,7 +90,8 @@ jobs:
           mkdir -p package/luci-theme-argon
           cp -r /tmp/argon-theme/. package/luci-theme-argon/
           rm -rf package/luci-theme-argon/.git
-          cp -r /tmp/argon-theme/compat/luci-app-argon-config package/luci-app-argon-config
+          git clone --depth 1 https://github.com/jerrykuku/luci-theme-argon.git /tmp/argon-master
+          cp -r /tmp/argon-master/compat/luci-app-argon-config package/luci-app-argon-config
           rm -rf package/luci-app-argon-config/.git
           git clone --depth 1 https://github.com/immortalwrt/luci.git /tmp/iluci
           cp -r /tmp/iluci/applications/luci-app-fancontrol package/luci-app-fancontrol
