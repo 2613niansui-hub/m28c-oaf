@@ -56,7 +56,7 @@ jobs:
           git clone --depth 1 https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter
           ls package/OpenAppFilter
 
-      - name: 4a. fallback: patch feed open-app-filter if it still exists
+      - name: "4a. fallback - patch feed open-app-filter if it still exists"
         run: |
           cd immortalwrt
           if [ -f feeds/packages/net/open-app-filter/Makefile ]; then
