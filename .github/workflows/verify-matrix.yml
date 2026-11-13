@@ -169,7 +169,7 @@ jobs:
       matrix:
         include:
           - area: oaf
-            pkgs: "feeds/packages/open-app-filter feeds/luci/luci-app-oaf"
+            pkgs: "feeds/packages/open-app-filter OpenAppFilter/luci-app-oaf"
           - area: qmodem-core
             pkgs: "qmodem tom_modem ubus-at-daemon"
           - area: qmodem-sms
@@ -258,6 +258,13 @@ jobs:
             *) for p in ${{ matrix.pkgs }}; do
                  grep -q "^CONFIG_PACKAGE_$p=y" .config && echo "CONFIG_OK $p" || echo "CONFIG_DROPPED $p"
                done ;;
+          esac
+      - name: kernel prepare (kmod targets need generated kernel .config)
+        run: |
+          cd immortalwrt
+          case "${{ matrix.area }}" in
+            oaf|kmods) make -j$(nproc) target/linux/prepare V=s > /tmp/kprepare.log 2>&1 || { tail -n 60 /tmp/kprepare.log; exit 1; } ;;
+            *) echo "skip kernel prepare" ;;
           esac
       - name: compile area packages
         run: |
