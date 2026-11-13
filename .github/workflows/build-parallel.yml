@@ -1,0 +1,606 @@
+name: Build parallel two-phase (M28C)
+
+# Two-phase build for the same feature set as .github/workflows/build-m28c-oaf.yml
+# (single job `make world`):
+#
+#   阶段A  prepare  ->  N x `make package/<group>/compile` in parallel matrix jobs
+#   阶段B  assemble -> collect every .apk artifact, rebuild packages.adb, create the
+#                      rootfs (the internal recipe of package/install, extracted into
+#                      an `assemble-install` target) and build the sysupgrade images.
+#
+# The single-job reference rebuilds tools+toolchain on every run (~30 min) and
+# serialises all packages in one `make world`.  This workflow reuses a cached
+# toolchain/kernel (saved by the prepare job) and spreads package compilation over
+# N runners, then only performs the install/image phase in the assemble job.
+#
+# If the cross-job merge cannot produce an image, the assemble job automatically
+# falls back to a full `make world` (still with cached toolchain) and uploads that
+# image plus all logs, so no functionality is lost.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tree_commit:
+        description: "immortalwrt commit (or 'master')"
+        required: false
+        default: "b08a7ebf159182f79b5e08fd2ce7ae2ca1876e5b"
+      feeds_mode:
+        description: "pinned | default"
+        required: false
+        default: "pinned"
+      apply_oaf_patch:
+        description: "apply .github/oaf-patch.py to feed open-app-filter (1/0)"
+        required: false
+        default: "1"
+      groups:
+        description: "number of parallel package groups"
+        required: false
+        default: "6"
+
+permissions:
+  contents: read
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+  TREE_COMMIT: ${{ github.event.inputs.tree_commit }}
+  FEEDS_MODE: ${{ github.event.inputs.feeds_mode }}
+  APPLY_OAF_PATCH: ${{ github.event.inputs.apply_oaf_patch }}
+  GROUPS: ${{ github.event.inputs.groups }}
+  CACHE_TAG: m28c-par-v1
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 0. free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost /opt/hostedtoolcache || true
+          sudo apt-get clean
+          df -h /
+
+      - name: 1. install build deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential clang flex bison g++ gawk \
+            gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev \
+            python3 python3-setuptools python3-pyelftools python3-yaml \
+            libpython3-dev rsync swig unzip zlib1g-dev file wget \
+            libelf-dev bc device-tree-compiler
+
+      - name: 2a. restore legacy verify cache (warm toolchain seed)
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            immortalwrt/staging_dir
+            immortalwrt/dl
+            immortalwrt/feeds
+            immortalwrt/.config
+            immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8
+            immortalwrt/build_dir/host
+            immortalwrt/build_dir/hostpkg
+            immortalwrt/build_dir/toolchain-aarch64_generic_gcc-14.3.0_musl
+          key: m28c-prep-v2-seed
+          restore-keys: |
+            m28c-prep-v2-
+
+      - name: 2b. restore parallel prepare cache
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            immortalwrt/staging_dir
+            immortalwrt/dl
+            immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8
+            immortalwrt/build_dir/host
+            immortalwrt/build_dir/hostpkg
+            immortalwrt/build_dir/toolchain-aarch64_generic_gcc-14.3.0_musl
+            immortalwrt/feeds
+            immortalwrt/package
+            immortalwrt/target
+            immortalwrt/include
+            immortalwrt/scripts
+            immortalwrt/tools
+            immortalwrt/toolchain
+            immortalwrt/files
+            immortalwrt/.git
+            immortalwrt/.config
+            immortalwrt/feeds.conf
+            immortalwrt/Makefile
+            immortalwrt/rules.mk
+            immortalwrt/Config.in
+            immortalwrt/.par-setup
+            immortalwrt/.par-config-sha
+            immortalwrt/.par-kernel-sha
+            immortalwrt/private-key.pem
+            immortalwrt/public-key.pem
+          key: ${{ env.CACHE_TAG }}-${{ hashFiles('.github/scripts/setup-tree.sh') }}-${{ env.TREE_COMMIT }}-${{ env.FEEDS_MODE }}
+          restore-keys: |
+            ${{ env.CACHE_TAG }}-${{ hashFiles('.github/scripts/setup-tree.sh') }}-${{ env.TREE_COMMIT }}-${{ env.FEEDS_MODE }}
+
+      - name: 3. setup tree + feeds + patches + vendor + files + .config
+        env:
+          FORCE_CONFIG: "1"
+        run: |
+          T0=$(date +%s)
+          bash .github/scripts/setup-tree.sh
+          echo "prepare_setup_seconds=$(( $(date +%s) - T0 ))" | tee -a timings.txt
+
+      - name: 4. host tools + toolchain (skip on cache hit)
+        id: toolchain
+        run: |
+          set -o pipefail
+          cd immortalwrt
+          T0=$(date +%s)
+          if ls -d staging_dir/toolchain-* >/dev/null 2>&1; then
+            echo "toolchain restored from cache -> skip toolchain/install"
+            BUILT=0
+          else
+            echo "toolchain missing -> make tools/install toolchain/install"
+            make -j"$(nproc)" tools/install toolchain/install V=s > /tmp/toolchain.log 2>&1 \
+              || { tail -n 150 /tmp/toolchain.log; exit 1; }
+            BUILT=1
+          fi
+          # top up host tools incrementally (fast when cached); protects against a
+          # cache produced by a neighbouring tree revision
+          make -j"$(nproc)" tools/install V=s > /tmp/tools-topup.log 2>&1 \
+            || { tail -n 100 /tmp/tools-topup.log; exit 1; }
+          T1=$(date +%s)
+          echo "prepare_toolchain_seconds=$((T1-T0))" | tee -a ../timings.txt
+          echo "built=$BUILT" >> "$GITHUB_OUTPUT"
+
+      - name: 5. kernel for target (skip when cached kernel matches .config)
+        id: kernel
+        run: |
+          set -o pipefail
+          cd immortalwrt
+          T0=$(date +%s)
+          CFG=$(cat .par-config-sha 2>/dev/null || true)
+          KH=$(cat .par-kernel-sha 2>/dev/null || true)
+          if ls build_dir/target-*/linux-*/linux-*/.config >/dev/null 2>&1 && [ -n "$CFG" ] && [ "$CFG" = "$KH" ]; then
+            echo "kernel build_dir matches config -> skip target/linux/compile"
+            BUILT=0
+          else
+            echo "building target/linux/compile (kernel + dtbs)"
+            make -j"$(nproc)" target/linux/compile V=s > /tmp/kernel.log 2>&1 \
+              || { tail -n 150 /tmp/kernel.log; exit 1; }
+            echo "$CFG" > .par-kernel-sha
+            BUILT=1
+          fi
+          T1=$(date +%s)
+          echo "prepare_kernel_seconds=$((T1-T0))" | tee -a ../timings.txt
+          echo "built=$BUILT" >> "$GITHUB_OUTPUT"
+
+      - name: 6. u-boot image for the device (image phase needs staging_dir/image)
+        run: |
+          set -o pipefail
+          cd immortalwrt
+          T0=$(date +%s)
+          if ls staging_dir/*/image/*u-boot-rockchip.bin >/dev/null 2>&1; then
+            echo "u-boot image already staged -> skip"
+          else
+            make -j"$(nproc)" package/boot/uboot-rockchip/compile V=s > /tmp/uboot.log 2>&1 \
+              || { tail -n 120 /tmp/uboot.log; echo "WARN: u-boot build failed (assemble may retry)"; }
+          fi
+          ls -l staging_dir/*/image/*u-boot-rockchip.bin 2>/dev/null || echo "WARN: no u-boot image staged yet"
+          echo "prepare_uboot_seconds=$(( $(date +%s) - T0 ))" | tee -a ../timings.txt
+
+      - name: 7. predownload sources
+        run: |
+          cd immortalwrt
+          T0=$(date +%s)
+          make download -j8 > /tmp/download.log 2>&1 || echo "WARN: make download had failures (sources will be fetched lazily)"
+          tail -n 3 /tmp/download.log || true
+          echo "prepare_download_seconds=$(( $(date +%s) - T0 ))" | tee -a ../timings.txt
+
+      - name: 8. plan parallel package groups
+        id: plan
+        run: |
+          set -o pipefail
+          MATRIX=$(python3 .github/scripts/plan-groups.py immortalwrt/.config immortalwrt/tmp/.packagedeps "$GROUPS")
+          echo "$MATRIX" > /tmp/matrix.json
+          {
+            echo "matrix<<PAR_MATRIX_EOF"
+            echo "$MATRIX"
+            echo "PAR_MATRIX_EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "matrix bytes: $(wc -c < /tmp/matrix.json)"
+          python3 -c '
+          import json
+          d = json.load(open("/tmp/matrix.json"))
+          tot = 0
+          for g in d["include"]:
+              n = int(g["ndirs"]); tot += n
+              print("group %s: %s dirs" % (g["group"], g["ndirs"]))
+          print("total scheduled dirs:", tot)
+          '
+
+      - name: 9. save prepare cache
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            immortalwrt/staging_dir
+            immortalwrt/dl
+            immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8
+            immortalwrt/build_dir/host
+            immortalwrt/build_dir/hostpkg
+            immortalwrt/build_dir/toolchain-aarch64_generic_gcc-14.3.0_musl
+            immortalwrt/feeds
+            immortalwrt/package
+            immortalwrt/target
+            immortalwrt/include
+            immortalwrt/scripts
+            immortalwrt/tools
+            immortalwrt/toolchain
+            immortalwrt/files
+            immortalwrt/.git
+            immortalwrt/.config
+            immortalwrt/feeds.conf
+            immortalwrt/Makefile
+            immortalwrt/rules.mk
+            immortalwrt/Config.in
+            immortalwrt/.par-setup
+            immortalwrt/.par-config-sha
+            immortalwrt/.par-kernel-sha
+            immortalwrt/private-key.pem
+            immortalwrt/public-key.pem
+          key: ${{ env.CACHE_TAG }}-${{ hashFiles('.github/scripts/setup-tree.sh') }}-${{ env.TREE_COMMIT }}-${{ env.FEEDS_MODE }}
+
+      - name: 10. prepare timings
+        if: always()
+        run: |
+          echo "=== prepare job timings (seconds) ==="
+          cat timings.txt 2>/dev/null || true
+          df -h / || true
+
+  pkg:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 0. free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost /opt/hostedtoolcache || true
+          sudo apt-get clean
+          df -h /
+
+      - name: 1. install build deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential clang flex bison g++ gawk \
+            gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev \
+            python3 python3-setuptools python3-pyelftools python3-yaml \
+            libpython3-dev rsync swig unzip zlib1g-dev file wget \
+            libelf-dev bc device-tree-compiler
+
+      - name: 2a. restore legacy verify cache (warm toolchain seed)
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            immortalwrt/staging_dir
+            immortalwrt/dl
+            immortalwrt/feeds
+            immortalwrt/.config
+            immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8
+            immortalwrt/build_dir/host
+            immortalwrt/build_dir/hostpkg
+            immortalwrt/build_dir/toolchain-aarch64_generic_gcc-14.3.0_musl
+          key: m28c-prep-v2-seed
+          restore-keys: |
+            m28c-prep-v2-
+
+      - name: 2b. restore parallel prepare cache
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            immortalwrt/staging_dir
+            immortalwrt/dl
+            immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8
+            immortalwrt/build_dir/host
+            immortalwrt/build_dir/hostpkg
+            immortalwrt/build_dir/toolchain-aarch64_generic_gcc-14.3.0_musl
+            immortalwrt/feeds
+            immortalwrt/package
+            immortalwrt/target
+            immortalwrt/include
+            immortalwrt/scripts
+            immortalwrt/tools
+            immortalwrt/toolchain
+            immortalwrt/files
+            immortalwrt/.git
+            immortalwrt/.config
+            immortalwrt/feeds.conf
+            immortalwrt/Makefile
+            immortalwrt/rules.mk
+            immortalwrt/Config.in
+            immortalwrt/.par-setup
+            immortalwrt/.par-config-sha
+            immortalwrt/.par-kernel-sha
+            immortalwrt/private-key.pem
+            immortalwrt/public-key.pem
+          key: ${{ env.CACHE_TAG }}-${{ hashFiles('.github/scripts/setup-tree.sh') }}-${{ env.TREE_COMMIT }}-${{ env.FEEDS_MODE }}
+          restore-keys: |
+            ${{ env.CACHE_TAG }}-${{ hashFiles('.github/scripts/setup-tree.sh') }}-${{ env.TREE_COMMIT }}-${{ env.FEEDS_MODE }}
+
+      - name: 3. setup tree (cache hit -> no clone)
+        run: |
+          T0=$(date +%s)
+          bash .github/scripts/setup-tree.sh
+          echo "job_setup_seconds=$(( $(date +%s) - T0 ))" | tee -a timing-${{ matrix.group }}.txt
+
+      - name: 4. compile group ${{ matrix.group }} (${{ matrix.ndirs }} dirs)
+        env:
+          DIRS: ${{ matrix.dirs }}
+        run: |
+          set -o pipefail
+          cd immortalwrt
+          T0=$(date +%s)
+          TARGETS=""
+          for d in $DIRS; do TARGETS="$TARGETS package/$d/compile"; done
+          echo "target count: $(echo $TARGETS | wc -w)"
+          if [ -z "$TARGETS" ]; then
+            echo "ERROR: empty target list for group ${{ matrix.group }}"
+            exit 1
+          fi
+          set +e
+          make -k -j"$(nproc)" $TARGETS V=s > /tmp/pkg-build.log 2>&1
+          RC=$?
+          set -e
+          T1=$(date +%s)
+          echo "compile_seconds=$((T1-T0)) rc=$RC"
+          echo "compile_seconds=$((T1-T0))" >> ../timing-${{ matrix.group }}.txt
+          echo "compile_rc=$RC"                 >> ../timing-${{ matrix.group }}.txt
+          echo "=== failing packages (if any) ==="
+          grep -aE "ERROR: .*failed to build|^make(\[[0-9]+\])?: \*\*\* .*Error" /tmp/pkg-build.log | tail -n 25 || true
+          echo "=== apks produced by this group ==="
+          find bin -name '*.apk' | wc -l
+          echo "apk_count=$(find bin -name '*.apk' | wc -l)" >> ../timing-${{ matrix.group }}.txt
+          if [ "$RC" -ne 0 ]; then
+            echo "GROUP FAILED rc=$RC"
+            tail -n 120 /tmp/pkg-build.log || true
+          fi
+          exit "$RC"
+
+      - name: 5. stage artifacts (apks + pkginfo + staging images + timings)
+        if: always()
+        run: |
+          set -x
+          P=immortalwrt
+          mkdir -p par-art/bin par-art/pkginfo par-art/staging-image par-art/staging-meta
+          rsync -a "$P/bin/" par-art/bin/ || true
+          if [ -d "$P/staging_dir/target-aarch64_generic_musl/pkginfo" ]; then
+            rsync -a "$P/staging_dir/target-aarch64_generic_musl/pkginfo/" par-art/pkginfo/ || true
+          fi
+          if [ -d "$P/staging_dir/target-aarch64_generic_musl/image" ]; then
+            rsync -a "$P/staging_dir/target-aarch64_generic_musl/image/" par-art/staging-image/ || true
+          fi
+          # base-files.version / libc.version / kernel.version are required by the
+          # rootfs `apk add` line and are written by package compile (not by prepare)
+          for f in "$P"/staging_dir/target-*/base-files.version "$P"/staging_dir/target-*/libc.version "$P"/staging_dir/target-*/kernel.version; do
+            [ -f "$f" ] && cp -f "$f" par-art/staging-meta/ 2>/dev/null || true
+          done
+          cp -f timing-${{ matrix.group }}.txt par-art/ || true
+          cp -f /tmp/pkg-build.log par-art/pkg-build-${{ matrix.group }}.log || true
+          du -sh par-art/* || true
+
+      - name: 6. upload group artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: par-pkgs-${{ matrix.group }}
+          path: par-art/
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 1
+
+  assemble:
+    needs: [prepare, pkg]
+    if: ${{ always() && needs.prepare.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 0. free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost /opt/hostedtoolcache || true
+          sudo apt-get clean
+          df -h /
+
+      - name: 1. install build deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential clang flex bison g++ gawk \
+            gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev \
+            python3 python3-setuptools python3-pyelftools python3-yaml \
+            libpython3-dev rsync swig unzip zlib1g-dev file wget \
+            libelf-dev bc device-tree-compiler
+
+      - name: 2a. restore legacy verify cache (warm toolchain seed)
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            immortalwrt/staging_dir
+            immortalwrt/dl
+            immortalwrt/feeds
+            immortalwrt/.config
+            immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8
+            immortalwrt/build_dir/host
+            immortalwrt/build_dir/hostpkg
+            immortalwrt/build_dir/toolchain-aarch64_generic_gcc-14.3.0_musl
+          key: m28c-prep-v2-seed
+          restore-keys: |
+            m28c-prep-v2-
+
+      - name: 2b. restore parallel prepare cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            immortalwrt/staging_dir
+            immortalwrt/dl
+            immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8
+            immortalwrt/build_dir/host
+            immortalwrt/build_dir/hostpkg
+            immortalwrt/build_dir/toolchain-aarch64_generic_gcc-14.3.0_musl
+            immortalwrt/feeds
+            immortalwrt/package
+            immortalwrt/target
+            immortalwrt/include
+            immortalwrt/scripts
+            immortalwrt/tools
+            immortalwrt/toolchain
+            immortalwrt/files
+            immortalwrt/.git
+            immortalwrt/.config
+            immortalwrt/feeds.conf
+            immortalwrt/Makefile
+            immortalwrt/rules.mk
+            immortalwrt/Config.in
+            immortalwrt/.par-setup
+            immortalwrt/.par-config-sha
+            immortalwrt/.par-kernel-sha
+            immortalwrt/private-key.pem
+            immortalwrt/public-key.pem
+          key: ${{ env.CACHE_TAG }}-${{ hashFiles('.github/scripts/setup-tree.sh') }}-${{ env.TREE_COMMIT }}-${{ env.FEEDS_MODE }}
+          restore-keys: |
+            ${{ env.CACHE_TAG }}-${{ hashFiles('.github/scripts/setup-tree.sh') }}-${{ env.TREE_COMMIT }}-${{ env.FEEDS_MODE }}
+
+      - name: 3. setup tree (cache hit -> no clone)
+        run: |
+          T0=$(date +%s)
+          bash .github/scripts/setup-tree.sh
+          echo "assemble_setup_seconds=$(( $(date +%s) - T0 ))" | tee -a timings.txt
+
+      - name: 4. download all package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: par-pkgs-*
+          merge-multiple: true
+          path: art
+
+      - name: 5. merge apks / pkginfo / staging images into the tree
+        run: |
+          set -x
+          ls -la art | head -n 20 || true
+          cat art/timing-*.txt 2>/dev/null || true
+          rsync -a art/bin/ immortalwrt/bin/
+          if [ -d art/pkginfo ]; then
+            mkdir -p immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo
+            rsync -a art/pkginfo/ immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/
+          fi
+          if [ -d art/staging-image ]; then
+            mkdir -p immortalwrt/staging_dir/target-aarch64_generic_musl/image
+            rsync -a art/staging-image/ immortalwrt/staging_dir/target-aarch64_generic_musl/image/
+          fi
+          if [ -d art/staging-meta ]; then
+            rsync -a art/staging-meta/ immortalwrt/staging_dir/target-aarch64_generic_musl/
+          fi
+          echo "staging version files:"; ls -l immortalwrt/staging_dir/target-aarch64_generic_musl/*.version 2>/dev/null || true
+          echo "apk files in tree: $(find immortalwrt/bin -name '*.apk' | wc -l)"
+          echo "pkginfo .install files: $(find immortalwrt/staging_dir -name '*.install' | wc -l)"
+          echo "pkginfo .version files: $(find immortalwrt/staging_dir -name '*.version' | wc -l)"
+
+      - name: 6. inject assemble-install target (rootfs recipe without aggregate deps)
+        run: |
+          bash .github/scripts/inject-assemble-target.sh immortalwrt
+
+      - name: 7. package/merge + package/merge-index (packages.adb)
+        run: |
+          set -o pipefail
+          cd immortalwrt
+          T0=$(date +%s)
+          rm -rf staging_dir/packages
+          make -j"$(nproc)" package/merge package/merge-index V=s > /tmp/merge.log 2>&1 \
+            || { tail -n 150 /tmp/merge.log; exit 1; }
+          echo "merge_seconds=$(( $(date +%s) - T0 ))" | tee -a ../timings.txt
+          ls -l staging_dir/packages/rockchip/packages.adb
+          echo "index size: $(ls -l staging_dir/packages/rockchip/packages.adb | awk '{print $5}')"
+
+      - name: 8. rootfs install (apk add into TARGET_DIR via assemble-install)
+        run: |
+          set -o pipefail
+          cd immortalwrt
+          T0=$(date +%s)
+          make -j1 assemble-install V=s > /tmp/rootfs.log 2>&1 \
+            || { tail -n 150 /tmp/rootfs.log; exit 1; }
+          echo "rootfs_seconds=$(( $(date +%s) - T0 ))" | tee -a ../timings.txt
+          echo "installed packages: $(grep -c 'Installing ' /tmp/rootfs.log || true)"
+          du -sh build_dir/target-aarch64_generic_musl/root-rockchip 2>/dev/null || true
+
+      - name: 9. build images (target/install)
+        run: |
+          set -o pipefail
+          cd immortalwrt
+          T0=$(date +%s)
+          make -j"$(nproc)" target/install V=s > /tmp/image.log 2>&1 \
+            || { tail -n 200 /tmp/image.log; exit 1; }
+          echo "image_seconds=$(( $(date +%s) - T0 ))" | tee -a ../timings.txt
+          find bin/targets/rockchip/armv8 -maxdepth 1 -name '*m28c*' -printf '%f %s\n' || true
+
+      - name: 10. fallback full make world if the fast merge path produced no image
+        id: fallback
+        run: |
+          set -o pipefail
+          cd immortalwrt
+          if ls bin/targets/rockchip/armv8/*m28c*sysupgrade.img.gz >/dev/null 2>&1; then
+            echo "FAST_PATH_OK: image produced without full make world"
+            echo "used_fallback=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "FAST_PATH_FAILED: no image yet -> full make world (cached toolchain)"
+          echo "used_fallback=1" >> "$GITHUB_OUTPUT"
+          T0=$(date +%s)
+          make -j"$(nproc)" world V=s > /tmp/world-fallback.log 2>&1 \
+            || { tail -n 200 /tmp/world-fallback.log; exit 1; }
+          echo "fallback_world_seconds=$(( $(date +%s) - T0 ))" | tee -a ../timings.txt
+          ls -l bin/targets/rockchip/armv8/*m28c* || true
+
+      - name: 11. collect images
+        if: always()
+        run: |
+          mkdir -p out logs
+          find immortalwrt/bin/targets/rockchip/armv8 -maxdepth 1 -name '*m28c*' -exec cp -v {} out/ \; 2>/dev/null || true
+          cp -f /tmp/merge.log logs/ 2>/dev/null || true
+          cp -f /tmp/rootfs.log logs/ 2>/dev/null || true
+          cp -f /tmp/image.log logs/ 2>/dev/null || true
+          cp -f /tmp/world-fallback.log logs/ 2>/dev/null || true
+          ls -lh out/ 2>/dev/null || true
+          { echo "=== assemble timings (seconds) ==="; cat timings.txt 2>/dev/null || true; } | tee -a logs/summary.txt
+
+      - name: 12. upload image artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: par-image-m28c
+          path: out/*
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: 13. upload assemble logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: par-assemble-logs
+          path: |
+            logs/
+            timings.txt
+          if-no-files-found: warn
+          retention-days: 7
