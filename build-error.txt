@@ -184,14 +184,14 @@ SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.floc
 touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-usb-xhci-hcd_installed
 echo "kmod-usb-xhci-hcd" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/linux.default.install
 make[3]: Leaving directory '/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/package/kernel/linux'
-time: package/kernel/linux/compile#8.67#6.04#16.09
+time: package/kernel/linux/compile#9.77#6.37#17.36
 make[3]: Entering directory '/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/package/OpenAppFilter/oaf'
 mkdir -p /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp
 SHELL= flock /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/tmp/.root-copy.flock -c 'cp -fpR /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/oaf/.pkgdir/kmod-oaf/. /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/'
 touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/root-rockchip/stamp/.kmod-oaf_installed
 echo "kmod-oaf" >> /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/staging_dir/target-aarch64_generic_musl/pkginfo/oaf.default.install
 make[3]: Leaving directory '/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/package/OpenAppFilter/oaf'
-time: package/OpenAppFilter/oaf/compile#0.19#0.16#0.34
+time: package/OpenAppFilter/oaf/compile#0.31#0.20#0.49
 make[3]: Entering directory '/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/feeds/packages/net/open-app-filter'
 rm -f /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/.built
 touch /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/.built_check
@@ -391,7 +391,7 @@ make[4]: *** [Makefile:224: __sub-make] Error 2
 make[4]: Leaving directory '/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/linux-6.12.91'
 make[3]: *** [Makefile:71: /home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/open-app-filter-2026.04.02~6c0ac2e6/.built] Error 2
 make[3]: Leaving directory '/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt/feeds/packages/net/open-app-filter'
-time: package/feeds/packages/open-app-filter/compile#1.49#0.47#1.98
+time: package/feeds/packages/open-app-filter/compile#1.53#0.52#2.03
     ERROR: package/feeds/packages/open-app-filter failed to build.
 make[2]: *** [package/Makefile:198: package/feeds/packages/open-app-filter/compile] Error 1
 make[2]: Leaving directory '/home/runner/work/m28c-oaf/m28c-oaf/immortalwrt'
