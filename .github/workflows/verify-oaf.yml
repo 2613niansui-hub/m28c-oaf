@@ -161,30 +161,41 @@ jobs:
 
           BD_FEED=$(grep -hE 'feeds/packages/.*open-app-filter' tmp/.packagedeps | head -n1 | sed 's/.*+= *//')
           BD_LUCI=$(grep -hE 'feeds/luci/.*luci-app-oaf' tmp/.packagedeps | head -n1 | sed 's/.*+= *//')
-          [ -n "$BD_FEED" ] || BD_FEED=feeds/packages/open-app-filter
-          [ -n "$BD_LUCI" ] || BD_LUCI=feeds/luci/luci-app-oaf
-          T_FEED="package/$BD_FEED/compile"
-          T_LUCI="package/$BD_LUCI/compile"
-          echo "TARGET feed = $T_FEED"
-          echo "TARGET luci = $T_LUCI"
+          echo "resolved BD_FEED=${BD_FEED:-?} BD_LUCI=${BD_LUCI:-?}"
+          # The FEED package dir is open-app-filter; "oaf"/"appfilter" are package NAMES, not
+          # build dirs. package/oaf/compile would build the vendored clone, not the feed kmod.
+          FEED_TARGETS="package/feeds/packages/open-app-filter/compile"
+          [ -n "$BD_FEED" ] && FEED_TARGETS="package/$BD_FEED/compile $FEED_TARGETS"
+          FEED_TARGETS="$FEED_TARGETS package/feeds/packages/net/open-app-filter/compile"
+          LUCI_TARGETS="package/feeds/luci/luci-app-oaf/compile"
+          [ -n "$BD_LUCI" ] && LUCI_TARGETS="package/$BD_LUCI/compile $LUCI_TARGETS"
+          LUCI_TARGETS="$LUCI_TARGETS package/feeds/luci/applications/luci-app-oaf/compile"
+
+          build_first_valid() {  # $1=label $2=rc-var-name, rest=candidate top-level targets
+            local label="$1" rcvar="$2"; shift 2
+            local t
+            for t in "$@"; do
+              echo "===== $label : $t =====" >> "$LOG"
+              if make -j$(nproc) "$t" V=s >> "$LOG" 2>&1; then
+                echo "BUILD_OK $label via $t" | tee -a "$LOG"
+                eval "$rcvar=0"; return 0
+              fi
+              if tail -n 80 "$LOG" | grep -q 'No rule to make target'; then
+                echo "TARGET_INVALID $label : $t" | tee -a "$LOG"
+                continue
+              fi
+              echo "BUILD_FAIL $label via $t" | tee -a "$LOG"
+              tail -n 80 "$LOG"
+              eval "$rcvar=1"; return 0
+            done
+            echo "BUILD_FAIL $label (no valid target among: $*)" | tee -a "$LOG"
+            eval "$rcvar=1"; return 0
+          }
 
           FEED_RC=0
           LUCI_RC=0
-          echo "===== open-app-filter (kmod-oaf + appfilter) =====" >> "$LOG"
-          if make -j$(nproc) "$T_FEED" V=s >> "$LOG" 2>&1; then
-            echo "BUILD_OK open-app-filter (feed)" | tee -a "$LOG"; FEED_RC=0
-          else
-            echo "BUILD_FAIL open-app-filter (feed)" | tee -a "$LOG"; FEED_RC=1
-            tail -n 80 "$LOG"
-          fi
-
-          echo "===== luci-app-oaf =====" >> "$LOG"
-          if make -j$(nproc) "$T_LUCI" V=s >> "$LOG" 2>&1; then
-            echo "BUILD_OK luci-app-oaf" | tee -a "$LOG"; LUCI_RC=0
-          else
-            echo "BUILD_FAIL luci-app-oaf" | tee -a "$LOG"; LUCI_RC=1
-            tail -n 40 "$LOG"
-          fi
+          build_first_valid "open-app-filter(kmod-oaf+appfilter)" FEED_RC $FEED_TARGETS
+          build_first_valid "luci-app-oaf" LUCI_RC $LUCI_TARGETS
 
           echo "===== artifact check =====" | tee -a "$LOG"
           KO=$(ls build_dir/target-*/linux-*/open-app-filter-*/oaf/src/oaf.ko 2>/dev/null | head -n1)
