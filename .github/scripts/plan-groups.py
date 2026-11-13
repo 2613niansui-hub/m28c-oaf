@@ -56,7 +56,39 @@ def main() -> int:
 
     # package/Makefile unconditionally does: package-y += kernel/linux
     dirs.add("kernel/linux")
-    buildonly_skipped = sorted(always_dirs - dirs)
+
+    # `package- += dir` covers two different cases:
+    #  a) build-only dirs (all `define Package/*` blocks carry BUILDONLY:=1):
+    #     never scheduled by world, built on demand via dep edges -> skip.
+    #  b) essential dirs whose Config symbol is not in .config (base-files,
+    #     libs/toolchain, ...): world DOES build these; they must be scheduled.
+    # Inspect the dir Makefile to tell them apart.
+    import os
+    tree = os.path.dirname(os.path.abspath(cfg_path))
+    always_keep = set()
+    for d in sorted(always_dirs):
+        mf = os.path.join(tree, "package", d, "Makefile")
+        if not os.path.isfile(mf):
+            always_keep.add(d)          # cannot inspect -> keep, safer
+            continue
+        try:
+            txt = open(mf, encoding="utf-8", errors="replace").read()
+        except OSError:
+            always_keep.add(d)
+            continue
+        blocks = re.split(r"\ndefine\s+(?:Kernel)?Package/", txt)
+        if len(blocks) <= 1:
+            always_keep.add(d)
+            continue
+        has_runtime = False
+        for b in blocks[1:]:
+            if "BUILDONLY:=1" not in re.sub(r"\s+", "", b):
+                has_runtime = True
+                break
+        if has_runtime:
+            always_keep.add(d)
+    dirs |= always_keep
+    buildonly_skipped = sorted(always_dirs - always_keep)
     # keep the list deterministic and drop obviously bogus entries
     dirs = sorted(d for d in dirs if "/" in d and not d.startswith("-"))
 
@@ -132,6 +164,7 @@ def main() -> int:
     print("=== parallel build plan ===", file=sys.stderr)
     print("selected build dirs: %d, dep edges: %d, groups: %d" % (len(dirs), len(edges), n),
           file=sys.stderr)
+    print("always dirs kept (essential, built by world): %d" % len(always_keep), file=sys.stderr)
     print("build-only dirs not scheduled (built on demand): %d" % len(buildonly_skipped),
           file=sys.stderr)
     for d in buildonly_skipped:
