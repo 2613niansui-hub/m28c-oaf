@@ -19,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
+      - uses: actions/checkout@v4
       - name: free disk
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost /opt/hostedtoolcache || true
@@ -58,10 +59,7 @@ jobs:
             mkdir -p feeds/packages/utils/attr/patches
             echo 'LS0tIGEvdG9vbHMvYXR0ci5jCisrKyBiL3Rvb2xzL2F0dHIuYwpAQCAtMTcsNiArMTcsNyBAQAogICovCiAKICNpbmNsdWRlICJjb25maWcuaCIKKyNpbmNsdWRlIDxsaWJnZW4uaD4KIAogI2luY2x1ZGUgPHN5cy90eXBlcy5oPgogI2luY2x1ZGUgPHN5cy9wYXJhbS5oPgo=' | base64 -d > feeds/packages/utils/attr/patches/100-libgen.patch
           fi
-          F=feeds/packages/net/open-app-filter/Makefile
-          if [ -f "$F" ] && ! grep -q OAFLOCALFIX "$F"; then
-            echo 'IyBPQUZMT0NBTEZJWDogT0FGIGRyaXZlciBjb2RlIGZyb20gMjAyNi0wNCBoYXMgbWFueSBHQ0MxNCB3YXJuaW5nczsgdGhlc2UgYXJlIG5vdCBlcnJvcnMgaGVyZQpLQ0ZMQUdTICs9IC1Xbm8tZXJyb3IgLVduby1lcnJvcj1taXNzaW5nLXByb3RvdHlwZXMgLVduby1lcnJvcj11bnVzZWQtdmFyaWFibGUgLVduby1lcnJvcj11bnVzZWQtYnV0LXNldC12YXJpYWJsZSAtV25vLWVycm9yPWZvcm1hdCAtV25vLWVycm9yPXN0cmljdC1wcm90b3R5cGVzCgpkZWZpbmUgQnVpbGQvUHJlcGFyZQoJJChjYWxsIEJ1aWxkL1ByZXBhcmUvRGVmYXVsdCkKCWZvciBmIGluICQoUEtHX0JVSUxEX0RJUikvb2FmL3NyYy8qLmM7IGRvIFwKCQlzZWQgLWkgJzFpICNwcmFnbWEgR0NDIGRpYWdub3N0aWMgaWdub3JlZCAiLVdtaXNzaW5nLXByb3RvdHlwZXMiJyAkJGY7IFwKCQlzZWQgLWkgJzFpICNwcmFnbWEgR0NDIGRpYWdub3N0aWMgaWdub3JlZCAiLVd1bnVzZWQtdmFyaWFibGUiJyAkJGY7IFwKCQlzZWQgLWkgJzFpICNwcmFnbWEgR0NDIGRpYWdub3N0aWMgaWdub3JlZCAiLVd1bnVzZWQtYnV0LXNldC12YXJpYWJsZSInICQkZjsgXAoJCXNlZCAtaSAnMWkgI3ByYWdtYSBHQ0MgZGlhZ25vc3RpYyBpZ25vcmVkICItV2Zvcm1hdCInICQkZjsgXAoJZG9uZQplbmRlZgo=' | base64 -d >> "$F"
-          fi
+          python3 ../.github/oaf-patch.py feeds/packages/net/open-app-filter/Makefile
       - name: vendor argon + fancontrol + OAF clone
         run: |
           cd immortalwrt
@@ -165,6 +163,7 @@ jobs:
           - area: kmods
             pkgs: "kmod-usb-net-cdc-mbim kmod-usb-net-qmi-wwan kmod-nft-tproxy kmod-tun kmod-usb-storage kmod-fs-ext4 kmod-fs-exfat kmod-fs-ntfs3 kmod-fs-vfat"
     steps:
+      - uses: actions/checkout@v4
       - name: free disk
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost /opt/hostedtoolcache || true
@@ -212,10 +211,7 @@ jobs:
             mkdir -p feeds/packages/utils/attr/patches
             echo 'LS0tIGEvdG9vbHMvYXR0ci5jCisrKyBiL3Rvb2xzL2F0dHIuYwpAQCAtMTcsNiArMTcsNyBAQAogICovCiAKICNpbmNsdWRlICJjb25maWcuaCIKKyNpbmNsdWRlIDxsaWJnZW4uaD4KIAogI2luY2x1ZGUgPHN5cy90eXBlcy5oPgogI2luY2x1ZGUgPHN5cy9wYXJhbS5oPgo=' | base64 -d > feeds/packages/utils/attr/patches/100-libgen.patch
           fi
-          F=feeds/packages/net/open-app-filter/Makefile
-          if [ -f "$F" ] && ! grep -q OAFLOCALFIX "$F"; then
-            echo 'IyBPQUZMT0NBTEZJWDogT0FGIGRyaXZlciBjb2RlIGZyb20gMjAyNi0wNCBoYXMgbWFueSBHQ0MxNCB3YXJuaW5nczsgdGhlc2UgYXJlIG5vdCBlcnJvcnMgaGVyZQpLQ0ZMQUdTICs9IC1Xbm8tZXJyb3IgLVduby1lcnJvcj1taXNzaW5nLXByb3RvdHlwZXMgLVduby1lcnJvcj11bnVzZWQtdmFyaWFibGUgLVduby1lcnJvcj11bnVzZWQtYnV0LXNldC12YXJpYWJsZSAtV25vLWVycm9yPWZvcm1hdCAtV25vLWVycm9yPXN0cmljdC1wcm90b3R5cGVzCgpkZWZpbmUgQnVpbGQvUHJlcGFyZQoJJChjYWxsIEJ1aWxkL1ByZXBhcmUvRGVmYXVsdCkKCWZvciBmIGluICQoUEtHX0JVSUxEX0RJUikvb2FmL3NyYy8qLmM7IGRvIFwKCQlzZWQgLWkgJzFpICNwcmFnbWEgR0NDIGRpYWdub3N0aWMgaWdub3JlZCAiLVdtaXNzaW5nLXByb3RvdHlwZXMiJyAkJGY7IFwKCQlzZWQgLWkgJzFpICNwcmFnbWEgR0NDIGRpYWdub3N0aWMgaWdub3JlZCAiLVd1bnVzZWQtdmFyaWFibGUiJyAkJGY7IFwKCQlzZWQgLWkgJzFpICNwcmFnbWEgR0NDIGRpYWdub3N0aWMgaWdub3JlZCAiLVd1bnVzZWQtYnV0LXNldC12YXJpYWJsZSInICQkZjsgXAoJCXNlZCAtaSAnMWkgI3ByYWdtYSBHQ0MgZGlhZ25vc3RpYyBpZ25vcmVkICItV2Zvcm1hdCInICQkZjsgXAoJZG9uZQplbmRlZgo=' | base64 -d >> "$F"
-          fi
+          python3 ../.github/oaf-patch.py feeds/packages/net/open-app-filter/Makefile
       - name: vendor packages
         run: |
           cd immortalwrt
