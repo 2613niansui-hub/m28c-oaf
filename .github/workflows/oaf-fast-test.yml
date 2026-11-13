@@ -1,0 +1,385 @@
+name: OAF fast test (full package path)
+
+# 快速验证区（task-5）：用接近 `make world` 的“全部包编译”路径验证 OAF -Werror 修复。
+# 关键点：命中 prepare 缓存时跳过工具链/内核重编，只跑 `make package/compile`，不构建固件镜像。
+# 只有 package/compile 成功 + kmod-oaf/appfilter/luci-app-oaf 三包产物都在才算 success。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  oaf-fast-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: 1. checkout (workflow + .github/oaf-patch.py)
+        uses: actions/checkout@v4
+
+      - name: 2. free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost /opt/hostedtoolcache || true
+          sudo apt-get clean
+          df -h /
+          echo "START_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: 3. install build deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential clang flex bison g++ gawk \
+            gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev \
+            python3 python3-setuptools python3-pyelftools python3-yaml \
+            libpython3-dev rsync swig unzip zlib1g-dev file wget \
+            libelf-dev bc device-tree-compiler
+
+      # actions/cache 的 version hash 由 path 列表决定：历史上有 3 种布局，按新到旧依次尝试。
+      - name: 4a. restore prepare cache (extended 8-path layout; newest m28c-prep-v2-43437871253)
+        id: cache_ext
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            immortalwrt/staging_dir
+            immortalwrt/dl
+            immortalwrt/feeds
+            immortalwrt/.config
+            immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8
+            immortalwrt/build_dir/host
+            immortalwrt/build_dir/hostpkg
+            immortalwrt/build_dir/toolchain-aarch64_generic_gcc-14.3.0_musl
+          key: m28c-fast-${{ github.run_id }}
+          restore-keys: |
+            m28c-prep-v2-
+            m28c-prep-v1-
+
+      - name: 4b. restore prepare cache (compact 5-path layout; m28c-prep-v2-43428320911)
+        id: cache_c5
+        if: steps.cache_ext.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            immortalwrt/staging_dir
+            immortalwrt/dl
+            immortalwrt/feeds
+            immortalwrt/.config
+            immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8
+          key: m28c-fast-${{ github.run_id }}
+          restore-keys: |
+            m28c-prep-v2-
+            m28c-prep-v1-
+
+      - name: 4c. restore prepare cache (compact 4-path layout; m28c-prep-v1-43420122667)
+        id: cache_c4
+        if: steps.cache_ext.outputs.cache-hit != 'true' && steps.cache_c5.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            immortalwrt/staging_dir
+            immortalwrt/dl
+            immortalwrt/feeds
+            immortalwrt/.config
+          key: m28c-fast-${{ github.run_id }}
+          restore-keys: |
+            m28c-prep-v1-
+            m28c-prep-
+
+      - name: 4d. cache restore summary
+        run: |
+          echo "cache_ext=${{ steps.cache_ext.outputs.cache-hit }} cache_c5=${{ steps.cache_c5.outputs.cache-hit }} cache_c4=${{ steps.cache_c4.outputs.cache-hit }}"
+          ls -d immortalwrt/staging_dir immortalwrt/feeds immortalwrt/dl 2>/dev/null || true
+
+      - name: 5. clone tree + pinned feeds
+        run: |
+          git init immortalwrt
+          cd immortalwrt
+          git remote add origin https://github.com/immortalwrt/immortalwrt.git
+          git fetch --depth 1 origin a302626ef448242574d00af0acc5ed1ef851cbe3
+          git checkout -q FETCH_HEAD
+          cat > feeds.conf <<'EOF'
+          src-git packages   https://github.com/immortalwrt/packages.git^3714a28d393e14a20c8359f3f640f61ca757636a
+          src-git luci       https://github.com/immortalwrt/luci.git^6bcf30cb319f36414a8dfaffa35b6e249a2cac02
+          src-git routing    https://github.com/openwrt/routing.git^776e7160636a7f1add27483ac926dadeb248bb65
+          src-git telephony  https://github.com/openwrt/telephony.git^4d8d33a023b24c52cd9443b9dc201fbdfe9c6aef
+          src-git video      https://github.com/openwrt/video.git^393e8eac5b45c5a1dc455ffe0e19e7651ad508a3
+          src-git qmodem     https://github.com/FUjr/QModem.git^0988085b887346ae9477ef2e77abe2f797bd2c4a
+          EOF
+          # 与 build-m28c-oaf.yml 对齐（kernel 6.12 默认 -Wmissing-prototypes；显式声明 WERROR 关闭）
+          for f in target/linux/generic/config-6.12 target/linux/rockchip/config-6.12; do
+            [ -f "$f" ] && grep -q "CONFIG_WERROR" "$f" || printf '# CONFIG_WERROR is not set\n' >> "$f"
+          done
+          # restored cache may carry the prepare job's local feed edits -> clean before update
+          for d in feeds/*/; do
+            if [ -d "$d/.git" ]; then git -C "$d" reset --hard -q; git -C "$d" clean -fdq || true; fi
+          done
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          echo "=== feed commit check ==="
+          git -C feeds/packages rev-parse HEAD
+          git -C feeds/luci rev-parse HEAD
+          git -C feeds/qmodem rev-parse HEAD
+
+      - name: 6. touch restored build stamps (git checkout mtime must not trigger rebuilds)
+        run: |
+          cd immortalwrt
+          find staging_dir build_dir -name '.built*' -o -name '.configured*' -o -name '.prepared*' 2>/dev/null | xargs -r touch || true
+          echo "built-stamps: $(find staging_dir build_dir -name '.built*' 2>/dev/null | wc -l)"
+
+      - name: 7. attr 2.5.2 + libgen patch (kernel 6.12 headers)
+        run: |
+          cd immortalwrt
+          if [ -f feeds/packages/utils/attr/Makefile ]; then
+            sed -i -e 's/^PKG_VERSION:=.*/PKG_VERSION:=2.5.2/' -e 's/^PKG_HASH:=.*/PKG_HASH:=skip/' feeds/packages/utils/attr/Makefile
+            mkdir -p feeds/packages/utils/attr/patches
+            echo 'LS0tIGEvdG9vbHMvYXR0ci5jCisrKyBiL3Rvb2xzL2F0dHIuYwpAQCAtMTcsNiArMTcsNyBAQAogICovCiAKICNpbmNsdWRlICJjb25maWcuaCIKKyNpbmNsdWRlIDxsaWJnZW4uaD4KIAogI2luY2x1ZGUgPHN5cy90eXBlcy5oPgogI2luY2x1ZGUgPHN5cy9wYXJhbS5oPgo=' | base64 -d > feeds/packages/utils/attr/patches/100-libgen.patch
+            grep -E '^(PKG_VERSION|PKG_HASH)' feeds/packages/utils/attr/Makefile
+          fi
+
+      - name: 8. apply OAF feed patch (Build/Compile warning suppression) + print result
+        run: |
+          cd immortalwrt
+          python3 ../.github/oaf-patch.py feeds/packages/net/open-app-filter/Makefile
+          echo '--- inserted block (OAF-M28C-WARN-FIX) ---'
+          sed -n '/OAF-M28C-WARN-FIX/,/endef/p' feeds/packages/net/open-app-filter/Makefile
+          echo '--- tail of feed Makefile ---'
+          tail -n 5 feeds/packages/net/open-app-filter/Makefile
+
+      - name: 9. vendor OpenAppFilter + argon + fancontrol (not proper feeds)
+        run: |
+          cd immortalwrt
+          git init package/OpenAppFilter
+          cd package/OpenAppFilter
+          git remote add origin https://github.com/destan19/OpenAppFilter.git
+          git fetch --depth 1 origin 569f93bfd56afc3ae8c21f13fc973926ff6629a5
+          git checkout -q FETCH_HEAD
+          ls luci-app-oaf/Makefile
+          cd ../..
+          git clone https://github.com/jerrykuku/luci-theme-argon.git /tmp/argon-theme
+          git -C /tmp/argon-theme checkout -q 3c8dc64bca054be0c184dc1dc9847b249710a466
+          mkdir -p package/luci-theme-argon && cp -r /tmp/argon-theme/. package/luci-theme-argon/ && rm -rf package/luci-theme-argon/.git
+          git clone --depth 1 https://github.com/jerrykuku/luci-theme-argon.git /tmp/argon-master
+          cp -r /tmp/argon-master/compat/luci-app-argon-config package/luci-app-argon-config && rm -rf package/luci-app-argon-config/.git
+          git clone --depth 1 https://github.com/immortalwrt/luci.git /tmp/iluci
+          cp -r /tmp/iluci/applications/luci-app-fancontrol package/luci-app-fancontrol
+          git clone --depth 1 https://github.com/immortalwrt/packages.git /tmp/ipkgs
+          cp -r /tmp/ipkgs/utils/fancontrol package/fancontrol
+          rm -rf package/luci-app-fancontrol/.git package/fancontrol/.git
+          # vendored from feed master: relative include ../../luci.mk breaks outside feed dir
+          sed -i "s#include ../../luci.mk#include $(TOPDIR)/feeds/luci/luci.mk#" package/luci-app-fancontrol/Makefile
+          [ -f package/luci-app-argon-config/Makefile ] && sed -i "s#include ../../luci.mk#include $(TOPDIR)/feeds/luci/luci.mk#" package/luci-app-argon-config/Makefile
+          ls package/luci-theme-argon/Makefile package/luci-app-argon-config/Makefile package/luci-app-fancontrol/Makefile package/fancontrol/Makefile
+
+      - name: 10. write .config (rockchip m28c + 512MB + all function packages) + defconfig
+        run: |
+          cd immortalwrt
+          cat > .config <<'EOF'
+          CONFIG_TARGET_rockchip=y
+          CONFIG_TARGET_rockchip_armv8=y
+          CONFIG_TARGET_rockchip_armv8_DEVICE_widora_mangopi-m28c=y
+          CONFIG_TARGET_ROOTFS_PARTSIZE=512
+          CONFIG_PACKAGE_luci-mod-admin-full=y
+          CONFIG_LUCI_LANG_zh_Hans=y
+          CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+          CONFIG_PACKAGE_luci-i18n-firewall-zh-cn=y
+          CONFIG_PACKAGE_luci-i18n-ttyd-zh-cn=y
+          CONFIG_PACKAGE_luci-app-firewall=y
+          CONFIG_PACKAGE_luci-app-attendedsysupgrade=y
+          CONFIG_PACKAGE_luci-theme-argon=y
+          CONFIG_PACKAGE_luci-app-argon-config=y
+          CONFIG_PACKAGE_ucode-mod-math=y
+          CONFIG_PACKAGE_luci-app-oaf=y
+          CONFIG_PACKAGE_kmod-oaf=y
+          CONFIG_PACKAGE_appfilter=y
+          CONFIG_PACKAGE_smartdns=y
+          CONFIG_PACKAGE_luci-app-smartdns=y
+          CONFIG_PACKAGE_adguardhome=y
+          CONFIG_PACKAGE_luci-app-adguardhome=y
+          CONFIG_PACKAGE_luci-app-3ginfo-lite=y
+          CONFIG_PACKAGE_luci-app-cpufreq=y
+          CONFIG_PACKAGE_luci-app-fancontrol=y
+          CONFIG_PACKAGE_fancontrol=y
+          CONFIG_PACKAGE_luci-app-qmodem-next=y
+          CONFIG_PACKAGE_luci-i18n-qmodem-next-zh-cn=y
+          CONFIG_PACKAGE_qmodem=y
+          CONFIG_PACKAGE_tom_modem=y
+          CONFIG_PACKAGE_ubus-at-daemon=y
+          CONFIG_PACKAGE_qmodem-smsd=y
+          CONFIG_PACKAGE_sms-forwarder-next=y
+          CONFIG_PACKAGE_kmod-usb-net-cdc-mbim=y
+          CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y
+          CONFIG_PACKAGE_kmod-usb-serial-option=y
+          CONFIG_PACKAGE_umbim=y
+          CONFIG_PACKAGE_uqmi=y
+          CONFIG_PACKAGE_luci-proto-mbim=y
+          CONFIG_PACKAGE_block-mount=y
+          CONFIG_PACKAGE_kmod-usb-storage=y
+          CONFIG_PACKAGE_kmod-usb-storage-uas=y
+          CONFIG_PACKAGE_kmod-fs-ext4=y
+          CONFIG_PACKAGE_kmod-fs-exfat=y
+          CONFIG_PACKAGE_kmod-fs-ntfs3=y
+          CONFIG_PACKAGE_kmod-fs-vfat=y
+          CONFIG_PACKAGE_vsftpd=y
+          CONFIG_PACKAGE_curl=y
+          CONFIG_PACKAGE_jq=y
+          CONFIG_PACKAGE_uhttpd=y
+          CONFIG_PACKAGE_luci-app-ttyd=y
+          CONFIG_PACKAGE_kmod-nft-tproxy=y
+          CONFIG_PACKAGE_kmod-nft-socket=y
+          CONFIG_PACKAGE_kmod-nft-fullcone=y
+          CONFIG_PACKAGE_kmod-tun=y
+          EOF
+          sed -i 's/^ *//' .config
+          make defconfig >/dev/null
+          echo "=== config sanity ==="
+          for k in CONFIG_PACKAGE_luci-app-oaf CONFIG_PACKAGE_kmod-oaf CONFIG_PACKAGE_appfilter \
+                   CONFIG_PACKAGE_luci-theme-argon CONFIG_PACKAGE_luci-app-cpufreq \
+                   CONFIG_PACKAGE_luci-app-fancontrol CONFIG_PACKAGE_luci-app-3ginfo-lite \
+                   CONFIG_PACKAGE_qmodem CONFIG_TARGET_ROOTFS_PARTSIZE; do
+            grep -q "^$k=" .config && echo "OK $k" || echo "WARN missing $k"
+          done
+          grep -q '^CONFIG_LUCI_LANG_zh_Hans=y' .config && echo "OK CONFIG_LUCI_LANG_zh_Hans" || echo "WARN missing CONFIG_LUCI_LANG_zh_Hans"
+          grep -E 'CONFIG_USE_APK|CONFIG_SIGN_EACH_PACKAGE' .config || true
+
+      - name: 11. build host tools + toolchain (only if cache missed)
+        run: |
+          cd immortalwrt
+          need=0
+          compgen -G "staging_dir/toolchain-*/bin/*-gcc" >/dev/null || need=1
+          [ -x staging_dir/host/bin/openssl ] || need=1
+          if [ "$need" = "1" ]; then
+            echo "cache miss -> building tools+toolchain"
+            make -j$(nproc) tools/install toolchain/install V=s > /tmp/prep.log 2>&1 || { tail -n 80 /tmp/prep.log; exit 1; }
+          else
+            echo "cache hit -> tools+toolchain reused"
+          fi
+          echo "tools+toolchain ready"
+
+      - name: 12. kernel (compile only if not restored from cache)
+        run: |
+          cd immortalwrt
+          if ls build_dir/target-*/linux-*/linux-*/.config >/dev/null 2>&1; then
+            echo "kernel .config restored from cache, skip target/linux/compile"
+          else
+            echo "kernel .config missing -> make target/linux/compile"
+            make -j$(nproc) target/linux/compile V=s > /tmp/kernel.log 2>&1 || { tail -n 120 /tmp/kernel.log; exit 1; }
+          fi
+          KDIR=$(ls -d build_dir/target-*/linux-*/linux-* 2>/dev/null | head -n1)
+          echo "KDIR=$KDIR"
+          [ -n "$KDIR" ] && grep -E '^CONFIG_(WERROR|COMPILE_TEST)=' "$KDIR/.config" || echo "no CONFIG_WERROR/COMPILE_TEST line in kernel .config"
+
+      # CORE：world 用的就是“全部包编译”这条路径（package/compile）
+      - name: "13. CORE make package/compile (full package build path, world-equivalent)"
+        run: |
+          cd immortalwrt
+          set +e
+          T0=$(date +%s)
+          make -j$(nproc) package/compile V=s > /tmp/pkgcompile.log 2>&1
+          RC=$?
+          T1=$(date +%s)
+          echo "$RC" > /tmp/pkgcompile.rc
+          echo "$((T1-T0))" > /tmp/pkgcompile.secs
+          echo "package/compile rc=$RC elapsed=$((T1-T0))s"
+          if [ "$RC" -ne 0 ]; then
+            echo "----- tail -n 200 /tmp/pkgcompile.log -----"
+            tail -n 200 /tmp/pkgcompile.log
+          fi
+          exit 0
+
+      - name: 14. diagnostics (OAF build path evidence)
+        if: always()
+        run: |
+          cd immortalwrt
+          {
+            echo "===== package/compile ====="
+            echo "rc=$(cat /tmp/pkgcompile.rc 2>/dev/null) elapsed=$(cat /tmp/pkgcompile.secs 2>/dev/null)s"
+            echo
+            echo "===== kernel .config WERROR ====="
+            KDIR=$(ls -d build_dir/target-*/linux-*/linux-* 2>/dev/null | head -n1)
+            echo "KDIR=$KDIR"
+            if [ -n "$KDIR" ]; then grep -E '^CONFIG_(WERROR|COMPILE_TEST)=' "$KDIR/.config" || echo "(no CONFIG_WERROR / CONFIG_COMPILE_TEST line)"; fi
+            echo
+            echo "===== OAF in package/compile log ====="
+            grep -nE 'open-app-filter|kmod-oaf|appfilter' /tmp/pkgcompile.log 2>/dev/null | tail -n 30 || echo "(no OAF line)"
+            echo "Werror occurrences in log: $(grep -c 'Werror' /tmp/pkgcompile.log 2>/dev/null || true)"
+            echo "error: occurrences in log: $(grep -c 'error:' /tmp/pkgcompile.log 2>/dev/null || true)"
+            echo
+            echo "===== app_filter.c pragmas (inserted by Build/Compile) ====="
+            SRC=$(find build_dir -path '*open-app-filter*/oaf/src/app_filter.c' 2>/dev/null | head -n1)
+            echo "SRC=$SRC"
+            if [ -n "$SRC" ]; then
+              echo "#pragma GCC diagnostic count: $(grep -c '#pragma GCC diagnostic' "$SRC" || true)"
+              head -n 6 "$SRC"
+            fi
+            echo
+            echo "===== kmod compile command flags (.app_filter.o.cmd) ====="
+            CMD=$(find build_dir -path '*open-app-filter*' -name '.app_filter.o.cmd' 2>/dev/null | head -n1)
+            echo "CMD=$CMD"
+            if [ -n "$CMD" ]; then
+              echo "Wno-error count in cmd: $(grep -o -- '-Wno-error' "$CMD" | wc -l)"
+              tr ' ' '\n' < "$CMD" | grep -E '^-W' | sort -u | head -n 60 || true
+            fi
+            echo
+            echo "===== patched oaf/src/Makefile tail ====="
+            SMK=$(find build_dir -path '*open-app-filter*/oaf/src/Makefile' 2>/dev/null | head -n1)
+            echo "SMK=$SMK"
+            if [ -n "$SMK" ]; then tail -n 6 "$SMK"; fi
+            echo
+            echo "===== artifacts (bin/packages) ====="
+            find bin/packages -maxdepth 3 -name '*oaf*' -o -maxdepth 3 -name 'appfilter*' 2>/dev/null || true
+          } 2>&1 | tee "$GITHUB_WORKSPACE/diagnostics.log" || true
+
+      - name: 15. artifact assertions (all must exist)
+        if: always()
+        run: |
+          cd immortalwrt
+          RC=$(cat /tmp/pkgcompile.rc 2>/dev/null || echo 1)
+          KO=$(find build_dir -path '*open-app-filter*' -name 'oaf.ko' 2>/dev/null | head -n1)
+          APK_KO=$(find bin/packages -name 'kmod-oaf*.apk' 2>/dev/null | head -n1)
+          APK_APP=$(find bin/packages -name 'appfilter*.apk' 2>/dev/null | head -n1)
+          APK_LUCI=$(find bin/packages -name 'luci-app-oaf*.apk' 2>/dev/null | head -n1)
+          IPK_KO=$(find bin/packages -name 'kmod-oaf*.ipk' 2>/dev/null | head -n1)
+          IPK_APP=$(find bin/packages -name 'appfilter*.ipk' 2>/dev/null | head -n1)
+          IPK_LUCI=$(find bin/packages -name 'luci-app-oaf*.ipk' 2>/dev/null | head -n1)
+          echo "package/compile rc = $RC"
+          echo "oaf.ko            = ${KO:-MISSING}"
+          echo "kmod-oaf .apk     = ${APK_KO:-MISSING}"
+          echo "appfilter .apk    = ${APK_APP:-MISSING}"
+          echo "luci-app-oaf .apk = ${APK_LUCI:-MISSING}"
+          echo "kmod-oaf .ipk     = ${IPK_KO:-none}"
+          echo "appfilter .ipk    = ${IPK_APP:-none}"
+          echo "luci-app-oaf .ipk = ${IPK_LUCI:-none}"
+          FAIL=0
+          [ "$RC" = "0" ] || { echo "FAIL package/compile rc=$RC"; FAIL=1; }
+          [ -n "$KO" ] || { echo "FAIL oaf.ko missing"; FAIL=1; }
+          [ -n "$APK_KO" ] || { echo "FAIL kmod-oaf .apk missing"; FAIL=1; }
+          [ -n "$APK_APP" ] || { echo "FAIL appfilter .apk missing"; FAIL=1; }
+          [ -n "$APK_LUCI" ] || { echo "FAIL luci-app-oaf .apk missing"; FAIL=1; }
+          ELAPSED=$(cat /tmp/pkgcompile.secs 2>/dev/null || echo '?')
+          if [ "$FAIL" = "1" ]; then
+            echo "RESULT_FAIL (package/compile ${ELAPSED}s)"
+            exit 1
+          fi
+          echo "RESULT_OK (package/compile ${ELAPSED}s)"
+
+      - name: 16. collect logs for artifact
+        if: always()
+        run: |
+          cp /tmp/pkgcompile.log "$GITHUB_WORKSPACE/" 2>/dev/null || true
+          cp /tmp/prep.log /tmp/kernel.log "$GITHUB_WORKSPACE/" 2>/dev/null || true
+          ls -lh "$GITHUB_WORKSPACE"/*.log 2>/dev/null || true
+
+      - name: 17. upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oaf-fast-test-log
+          path: |
+            pkgcompile.log
+            prep.log
+            kernel.log
+            diagnostics.log
+          retention-days: 7
+          if-no-files-found: ignore
