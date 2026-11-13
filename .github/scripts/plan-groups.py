@@ -36,6 +36,7 @@ def main() -> int:
     selected = set(CONFIG_RE.findall(cfg))
 
     dirs = set()
+    always_dirs = set()
     for line in open(deps_path, encoding="utf-8", errors="replace"):
         m = PKG_LINE.match(line)
         if m:
@@ -44,11 +45,18 @@ def main() -> int:
             continue
         m = ALWAYS_LINE.match(line)
         if m:
-            dirs.add(m.group(1))
+            # `package- += dir` are dirs whose packages are all BUILDONLY.  A full
+            # `make world` never schedules them in package/compile; they are built
+            # only when another package lists them as a build dependency (the
+            # dependency edges in tmp/.packagedeps make make pull them in).
+            # Scheduling them explicitly here made the first test run build Qt5 /
+            # bpf-headers / easyloggingpp pointlessly (and fail on host cmake/clang).
+            always_dirs.add(m.group(1))
             continue
 
     # package/Makefile unconditionally does: package-y += kernel/linux
     dirs.add("kernel/linux")
+    buildonly_skipped = sorted(always_dirs - dirs)
     # keep the list deterministic and drop obviously bogus entries
     dirs = sorted(d for d in dirs if "/" in d and not d.startswith("-"))
 
@@ -124,6 +132,10 @@ def main() -> int:
     print("=== parallel build plan ===", file=sys.stderr)
     print("selected build dirs: %d, dep edges: %d, groups: %d" % (len(dirs), len(edges), n),
           file=sys.stderr)
+    print("build-only dirs not scheduled (built on demand): %d" % len(buildonly_skipped),
+          file=sys.stderr)
+    for d in buildonly_skipped:
+        print("  skip %s" % d, file=sys.stderr)
     for g in groups:
         print("  %s: %2d dirs (weight %d)" % (g["name"], len(g["dirs"]), g["weight"]),
               file=sys.stderr)
