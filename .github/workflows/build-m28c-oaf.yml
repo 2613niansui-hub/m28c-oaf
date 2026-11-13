@@ -52,6 +52,10 @@ jobs:
           EOF
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+          # OAF 的 6.12 驱动代码有大量 -Wmissing-prototypes 警告，内核默认 CONFIG_WERROR=y 会把它当错误
+          for f in target/linux/generic/config-6.12 target/linux/rockchip/config-6.12; do
+            [ -f "$f" ] && grep -q "CONFIG_WERROR" "$f" || printf '# CONFIG_WERROR is not set\n' >> "$f"
+          done
           echo "=== feed commit check ==="
           git -C feeds/packages rev-parse HEAD
           git -C feeds/luci rev-parse HEAD
