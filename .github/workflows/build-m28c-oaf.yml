@@ -76,32 +76,11 @@ jobs:
             grep -E '^(PKG_VERSION|PKG_HASH)' feeds/packages/utils/attr/Makefile
           fi
 
-      - name: 3c. patch feed OAF package correctly (define BEFORE eval + ccflags-y)
+      - name: 3c. patch feed OAF package (define BEFORE eval + forgiving ccflags)
         run: |
           cd immortalwrt
-          python3 - <<'PY'
-          import io
-          p = 'feeds/packages/net/open-app-filter/Makefile'
-          s = io.open(p, encoding='utf-8').read()
-          if 'OAFLOCALFIX' in s:
-              print('already patched')
-              raise SystemExit(0)
-          block = (
-              '# OAFLOCALFIX: OAF 驱动代码有大量 GCC14 告警，这里要求 kbuild 把它们当警告\n'
-              'define Build/Prepare\n'
-              '\t$(call Build/Prepare/Default)\n'
-              '\tprintf \'ccflags-y += -Wno-error -Wno-error=missing-prototypes -Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-error=format -Wno-error=strict-prototypes\\n\' >> $(PKG_BUILD_DIR)/oaf/src/Makefile\n'
-              '\tfor f in $(PKG_BUILD_DIR)/oaf/src/*.c; do for w in missing-prototypes unused-variable unused-but-set-variable format strict-prototypes; do sed -i \"1i #pragma GCC diagnostic ignored \\\"-W$$w\\\"\" $$f; done; done\n'
-              'endef\n\n'
-          )
-          i = s.find('$(eval $(call')
-          if i < 0:
-              print('eval anchor not found'); raise SystemExit(1)
-          s = s[:i] + block + s[i:]
-          io.open(p, 'w', encoding='utf-8', newline='\n').write(s)
-          print('patched before eval')
-          PY
-          grep -n -A4 OAFLOCALFIX feeds/packages/net/open-app-filter/Makefile | head -20
+          python3 ../.github/oaf-patch.py feeds/packages/net/open-app-filter/Makefile
+          grep -n -A3 OAFLOCALFIX feeds/packages/net/open-app-filter/Makefile | head -12
 
       - name: 4. add OpenAppFilter (pinned 569f93bf)
         run: |
