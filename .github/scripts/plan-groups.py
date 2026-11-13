@@ -76,7 +76,7 @@ def main() -> int:
         except OSError:
             always_keep.add(d)
             continue
-        blocks = re.split(r"\ndefine\s+(?:Kernel)?Package/", txt)
+        blocks = re.split(r"\ndefine\s+(?:Kernel)?Package/[A-Za-z0-9_.+-]+\n", txt)
         if len(blocks) <= 1:
             always_keep.add(d)
             continue
