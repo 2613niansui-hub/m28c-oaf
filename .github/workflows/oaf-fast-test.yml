@@ -58,7 +58,7 @@ jobs:
 
       - name: 4b. restore prepare cache (compact 5-path layout; m28c-prep-v2-43428320911)
         id: cache_c5
-        if: steps.cache_ext.outputs.cache-hit != 'true'
+        if: steps.cache_ext.outputs.cache-matched-key == ''
         uses: actions/cache/restore@v4
         with:
           path: |
@@ -74,7 +74,7 @@ jobs:
 
       - name: 4c. restore prepare cache (compact 4-path layout; m28c-prep-v1-43420122667)
         id: cache_c4
-        if: steps.cache_ext.outputs.cache-hit != 'true' && steps.cache_c5.outputs.cache-hit != 'true'
+        if: steps.cache_ext.outputs.cache-matched-key == '' && steps.cache_c5.outputs.cache-matched-key == ''
         uses: actions/cache/restore@v4
         with:
           path: |
@@ -89,7 +89,9 @@ jobs:
 
       - name: 4d. cache restore summary
         run: |
-          echo "cache_ext=${{ steps.cache_ext.outputs.cache-hit }} cache_c5=${{ steps.cache_c5.outputs.cache-hit }} cache_c4=${{ steps.cache_c4.outputs.cache-hit }}"
+          echo "matched_ext=${{ steps.cache_ext.outputs.cache-matched-key }}"
+          echo "matched_c5=${{ steps.cache_c5.outputs.cache-matched-key }}"
+          echo "matched_c4=${{ steps.cache_c4.outputs.cache-matched-key }}"
           ls -d immortalwrt/staging_dir immortalwrt/feeds immortalwrt/dl 2>/dev/null || true
 
       - name: 5. clone tree + pinned feeds
