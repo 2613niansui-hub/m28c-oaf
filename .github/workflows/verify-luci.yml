@@ -35,11 +35,30 @@ jobs:
             libpython3-dev rsync swig unzip zlib1g-dev file wget \
             libelf-dev bc device-tree-compiler
 
-      - name: 2b. restore cached staging_dir/dl/feeds (fast path; full build if miss)
+      - name: 2b. restore matrix prepare cache (compact layout: staging/dl/feeds/config/linux)
+        id: prepcache_compact
         uses: actions/cache/restore@v4
         with:
-          # NOTE: actions/cache version-hashes this exact path list, so it must match
-          # .github/workflows/verify-matrix.yml (prepare save step) byte for byte.
+          # actions/cache version-hashes the EXACT path list, so the list must equal the one
+          # verify-matrix.yml used when saving. This first attempt matches the compact
+          # (5 path) layout of m28c-prep-v2-43428320911; the second attempt below matches the
+          # newer extended layout.
+          path: |
+            immortalwrt/staging_dir
+            immortalwrt/dl
+            immortalwrt/feeds
+            immortalwrt/.config
+            immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8
+          key: ${{ inputs.prep_cache_key || format('m28c-prep-{0}', github.run_id) }}
+          restore-keys: |
+            m28c-prep-v2-
+            m28c-prep-
+
+      - name: 2c. restore matrix prepare cache (extended layout: +host/hostpkg/toolchain)
+        id: prepcache_ext
+        if: steps.prepcache_compact.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
           path: |
             immortalwrt/staging_dir
             immortalwrt/dl
@@ -178,17 +197,25 @@ jobs:
             grep -q "^CONFIG_PACKAGE_$k=y" .config && echo "CONFIG OK $k" || echo "CONFIG MISSING $k"
           done
 
-      - name: 6. build host tools + toolchain, then kernel (kmod deps need it)
+      - name: 6. build host tools + toolchain, then kernel (only when cache missed)
         run: |
           cd immortalwrt
-          make -j$(nproc) tools/install toolchain/install V=s > "$GITHUB_WORKSPACE/prep.log" 2>&1 || { tail -n 80 "$GITHUB_WORKSPACE/prep.log"; exit 1; }
-          echo "tools+toolchain ok"
+          if [ -x staging_dir/host/bin/openssl ] && ls staging_dir/toolchain-*/bin/*-gcc >/dev/null 2>&1; then
+            echo "tools+toolchain restored from cache, skip build"
+          else
+            make -j$(nproc) tools/install toolchain/install V=s > "$GITHUB_WORKSPACE/prep.log" 2>&1 || { tail -n 80 "$GITHUB_WORKSPACE/prep.log"; exit 1; }
+            echo "tools+toolchain built"
+          fi
           # luci-app-3ginfo-lite depends on kmod-usb-serial-option and luci-app-oaf on kmod-oaf, so their
           # compile targets also build those kmod packages. A kmod target fails with
           # "No rule to make target '.../linux-6.12.91/.config'" unless Kernel/Configure has run, which
           # only happens for target/linux/* (there is no rule for $(LINUX_DIR)/.config in package context).
-          make -j$(nproc) target/linux/compile V=s > "$GITHUB_WORKSPACE/kernel.log" 2>&1 || { tail -n 120 "$GITHUB_WORKSPACE/kernel.log"; exit 1; }
-          echo "kernel ok"
+          if [ -f build_dir/target-aarch64_generic_musl/linux-rockchip_armv8/linux-6.12.91/.config ]; then
+            echo "kernel .config restored from cache, skip kernel build"
+          else
+            make -j$(nproc) target/linux/compile V=s > "$GITHUB_WORKSPACE/kernel.log" 2>&1 || { tail -n 120 "$GITHUB_WORKSPACE/kernel.log"; exit 1; }
+            echo "kernel built"
+          fi
 
       - name: 7. compile luci/theme/apps one by one
         run: |
