@@ -1,0 +1,457 @@
+name: Build ImmortalWrt + OAF for M28C (fast, cached)
+
+# Speed-up variant of build-m28c-oaf.yml.
+# Same tree / feeds / patches / .config / image as the main build; the only difference is a
+# GitHub Actions cache layer that restores toolchain + host tools + kernel build dirs, so a
+# re-run does not spend ~45 min rebuilding the toolchain and ~11 min rebuilding the kernel.
+on:
+  workflow_dispatch:
+    inputs:
+      cache_tag:
+        description: cache version tag (bump it to invalidate all build caches)
+        required: false
+        default: v1
+
+permissions:
+  contents: write
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+
+    steps:
+      - name: 0. checkout (so a failed build can publish its log)
+        uses: actions/checkout@v4
+
+      - name: 0b. init timing
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/timing"
+          date +%s > "$GITHUB_WORKSPACE/timing/.run_start"
+
+      - name: 1. free disk space
+        run: |
+          T0=$(date +%s)
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost /opt/hostedtoolcache || true
+          sudo apt-get clean
+          df -h /
+          D=$(( $(date +%s) - T0 )); echo "$D" > "$GITHUB_WORKSPACE/timing/01_free_disk.sec"; echo "STEP 1 free disk: ${D}s"
+
+      - name: 2. install build deps
+        run: |
+          T0=$(date +%s)
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential clang flex bison g++ gawk \
+            gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev \
+            python3 python3-setuptools python3-pyelftools python3-yaml \
+            libpython3-dev rsync swig unzip zlib1g-dev file wget \
+            libelf-dev bc device-tree-compiler
+          D=$(( $(date +%s) - T0 )); echo "$D" > "$GITHUB_WORKSPACE/timing/02_deps.sec"; echo "STEP 2 deps: ${D}s"
+          date +%s > "$GITHUB_WORKSPACE/timing/.after_deps"
+
+      # ---------------------------------------------------------------------------------
+      # Cache restore. actions/cache version-hashes the EXACT path list, so each restore
+      # below must use the same list that produced the cache:
+      #   * 2b extended layout (8 paths)  = m28c-build-* (ours) and the newest m28c-prep-v2-*
+      #   * 2c compact  layout (5 paths)  = older m28c-prep-v2-* / m28c-prep-v1-*
+      # restore-keys order: own build cache -> m28c-prep-v2- -> m28c-prep-v1-
+      # ---------------------------------------------------------------------------------
+      - name: "2b. restore build cache (extended layout: toolchain/host/kernel)"
+        id: cache_ext
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            immortalwrt/staging_dir
+            immortalwrt/dl
+            immortalwrt/feeds
+            immortalwrt/.config
+            immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8
+            immortalwrt/build_dir/host
+            immortalwrt/build_dir/hostpkg
+            immortalwrt/build_dir/toolchain-aarch64_generic_gcc-14.3.0_musl
+          key: m28c-build-${{ inputs.cache_tag }}-${{ github.run_id }}
+          restore-keys: |
+            m28c-build-${{ inputs.cache_tag }}-
+            m28c-prep-v2-
+            m28c-prep-v1-
+
+      - name: 2c. restore build cache (compact layout fallback)
+        id: cache_compact
+        # only when 2b restored nothing at all (cache-hit is false for restore-key matches,
+        # so it must be cache-matched-key that decides)
+        if: steps.cache_ext.outputs.cache-matched-key == ''
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            immortalwrt/staging_dir
+            immortalwrt/dl
+            immortalwrt/feeds
+            immortalwrt/.config
+            immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8
+          key: m28c-build-${{ inputs.cache_tag }}-${{ github.run_id }}
+          restore-keys: |
+            m28c-prep-v2-
+            m28c-prep-v1-
+
+      - name: 2d. audit restored cache (assert toolchain + kernel really present)
+        id: audit
+        run: |
+          TOOLCHAIN_HIT=0; KERNEL_HIT=0; HOST_HIT=0
+          if ls -d immortalwrt/staging_dir/toolchain-* >/dev/null 2>&1; then TOOLCHAIN_HIT=1; fi
+          if ls immortalwrt/build_dir/target-*/linux-*/linux-*/.config >/dev/null 2>&1; then KERNEL_HIT=1; fi
+          if [ -d immortalwrt/build_dir/host ] && [ -d immortalwrt/build_dir/hostpkg ]; then HOST_HIT=1; fi
+          if [ -f immortalwrt/.config ]; then cp immortalwrt/.config /tmp/cached.config; echo "cached .config kept for kernel-config fingerprint"; fi
+          echo "TOOLCHAIN_HIT=$TOOLCHAIN_HIT"
+          echo "KERNEL_HIT=$KERNEL_HIT (kernel .config present in restored build_dir)"
+          echo "HOST_BUILD_DIR_HIT=$HOST_HIT"
+          echo "CACHE_EXT_MATCHED=${{ steps.cache_ext.outputs.cache-matched-key }}"
+          echo "CACHE_COMPACT_MATCHED=${{ steps.cache_compact.outputs.cache-matched-key }}"
+          echo "toolchain_hit=$TOOLCHAIN_HIT" >> "$GITHUB_OUTPUT"
+          echo "kernel_file_hit=$KERNEL_HIT" >> "$GITHUB_OUTPUT"
+          echo "host_hit=$HOST_HIT" >> "$GITHUB_OUTPUT"
+          if [ "$TOOLCHAIN_HIT" = "0" ]; then echo "SILENT_MISS: cache said hit but staging_dir/toolchain-* is absent -> full build path"; fi
+          date +%s > "$GITHUB_WORKSPACE/timing/.after_restore"
+
+      - name: 3. clone immortalwrt (kernel 6.12) + pinned feeds
+        run: |
+          T0=$(date +%s)
+          git init immortalwrt
+          cd immortalwrt
+          git remote add origin https://github.com/immortalwrt/immortalwrt.git
+          # a302626e = last ImmortalWrt commit before rockchip switched to kernel 6.18
+          git fetch --depth 1 origin a302626ef448242574d00af0acc5ed1ef851cbe3
+          git checkout -q FETCH_HEAD
+          cat > feeds.conf <<'EOF'
+          src-git packages   https://github.com/immortalwrt/packages.git^3714a28d393e14a20c8359f3f640f61ca757636a
+          src-git luci       https://github.com/immortalwrt/luci.git^6bcf30cb319f36414a8dfaffa35b6e249a2cac02
+          src-git routing    https://github.com/openwrt/routing.git^776e7160636a7f1add27483ac926dadeb248bb65
+          src-git telephony  https://github.com/openwrt/telephony.git^4d8d33a023b24c52cd9443b9dc201fbdfe9c6aef
+          src-git video      https://github.com/openwrt/video.git^393e8eac5b45c5a1dc455ffe0e19e7651ad508a3
+          src-git qmodem     https://github.com/FUjr/QModem.git^0988085b887346ae9477ef2e77abe2f797bd2c4a
+          EOF
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          # OAF 的 6.12 驱动代码有大量 -Wmissing-prototypes 警告，内核默认 CONFIG_WERROR=y 会把它当错误
+          for f in target/linux/generic/config-6.12 target/linux/rockchip/config-6.12; do
+            [ -f "$f" ] && grep -q "CONFIG_WERROR" "$f" || printf '# CONFIG_WERROR is not set\n' >> "$f"
+          done
+          echo "=== feed commit check ==="
+          git -C feeds/packages rev-parse HEAD
+          git -C feeds/luci rev-parse HEAD
+          git -C feeds/qmodem rev-parse HEAD
+          echo "=== required packages present? ==="
+          for d in feeds/luci/applications/luci-app-cpufreq feeds/luci/applications/luci-app-3ginfo-lite \
+                   feeds/qmodem/application/qmodem feeds/qmodem/luci/luci-app-qmodem-next; do
+            [ -e "$d" ] && echo "OK $d" || { echo "MISSING $d"; exit 1; }
+          done
+          D=$(( $(date +%s) - T0 )); echo "$D" > "$GITHUB_WORKSPACE/timing/03_clone.sec"; echo "STEP 3 clone+feeds: ${D}s"
+
+      - name: 3b. attr 2.5.2 + libgen patch (kernel 6.12 headers)
+        run: |
+          T0=$(date +%s)
+          cd immortalwrt
+          if [ -f feeds/packages/utils/attr/Makefile ]; then
+            sed -i -e 's/^PKG_VERSION:=.*/PKG_VERSION:=2.5.2/' -e 's/^PKG_HASH:=.*/PKG_HASH:=skip/' feeds/packages/utils/attr/Makefile
+            mkdir -p feeds/packages/utils/attr/patches
+            echo 'LS0tIGEvdG9vbHMvYXR0ci5jCisrKyBiL3Rvb2xzL2F0dHIuYwpAQCAtMTcsNiArMTcsNyBAQAogICovCiAKICNpbmNsdWRlICJjb25maWcuaCIKKyNpbmNsdWRlIDxsaWJnZW4uaD4KIAogI2luY2x1ZGUgPHN5cy90eXBlcy5oPgogI2luY2x1ZGUgPHN5cy9wYXJhbS5oPgo=' | base64 -d > feeds/packages/utils/attr/patches/100-libgen.patch
+            grep -E '^(PKG_VERSION|PKG_HASH)' feeds/packages/utils/attr/Makefile
+          fi
+          D=$(( $(date +%s) - T0 )); echo "$D" > "$GITHUB_WORKSPACE/timing/03b_attr.sec"; echo "STEP 3b attr: ${D}s"
+
+      - name: 3c. patch feed OAF package (define BEFORE eval + forgiving ccflags)
+        run: |
+          T0=$(date +%s)
+          cd immortalwrt
+          python3 ../.github/oaf-patch.py feeds/packages/net/open-app-filter/Makefile
+          grep -n -A3 OAFLOCALFIX feeds/packages/net/open-app-filter/Makefile | head -12
+          D=$(( $(date +%s) - T0 )); echo "$D" > "$GITHUB_WORKSPACE/timing/03c_oafpatch.sec"; echo "STEP 3c oaf-patch: ${D}s"
+
+      - name: 4. add OpenAppFilter (pinned 569f93bf)
+        run: |
+          T0=$(date +%s)
+          cd immortalwrt
+          git init package/OpenAppFilter
+          cd package/OpenAppFilter
+          git remote add origin https://github.com/destan19/OpenAppFilter.git
+          git fetch --depth 1 origin 569f93bfd56afc3ae8c21f13fc973926ff6629a5
+          git checkout -q FETCH_HEAD
+          printf '\nsubdir-ccflags-y += -Wno-error -Wno-error=missing-prototypes -Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-error=format -Wno-error=strict-prototypes\n' >> oaf/Makefile
+          printf '\nccflags-y += -Wno-error -Wno-error=missing-prototypes -Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-error=format -Wno-error=strict-prototypes\n' >> oaf/src/Makefile
+          tail -n 2 oaf/src/Makefile
+          D=$(( $(date +%s) - T0 )); echo "$D" > "$GITHUB_WORKSPACE/timing/04_oaf.sec"; echo "STEP 4 OAF: ${D}s"
+
+      - name: 4b. vendor argon theme + argon-config + fancontrol (not proper feeds)
+        run: |
+          T0=$(date +%s)
+          cd immortalwrt
+          git clone https://github.com/jerrykuku/luci-theme-argon.git /tmp/argon-theme
+          git -C /tmp/argon-theme checkout -q 3c8dc64bca054be0c184dc1dc9847b249710a466
+          mkdir -p package/luci-theme-argon
+          cp -r /tmp/argon-theme/. package/luci-theme-argon/
+          rm -rf package/luci-theme-argon/.git
+          git clone --depth 1 https://github.com/jerrykuku/luci-theme-argon.git /tmp/argon-master
+          cp -r /tmp/argon-master/compat/luci-app-argon-config package/luci-app-argon-config
+          rm -rf package/luci-app-argon-config/.git
+          git clone --depth 1 https://github.com/immortalwrt/luci.git /tmp/iluci
+          cp -r /tmp/iluci/applications/luci-app-fancontrol package/luci-app-fancontrol
+          git clone --depth 1 https://github.com/immortalwrt/packages.git /tmp/ipkgs
+          cp -r /tmp/ipkgs/utils/fancontrol package/fancontrol
+          rm -rf package/luci-app-fancontrol/.git package/fancontrol/.git
+          # vendored from feed master: relative include ../../luci.mk breaks outside feed dir
+          sed -i "s#include ../../luci.mk#include $(TOPDIR)/feeds/luci/luci.mk#" package/luci-app-fancontrol/Makefile
+          [ -f package/luci-app-argon-config/Makefile ] && sed -i "s#include ../../luci.mk#include $(TOPDIR)/feeds/luci/luci.mk#" package/luci-app-argon-config/Makefile
+          ls package/luci-theme-argon/Makefile package/luci-app-argon-config/Makefile package/luci-app-fancontrol/Makefile package/fancontrol/Makefile
+          D=$(( $(date +%s) - T0 )); echo "$D" > "$GITHUB_WORKSPACE/timing/04b_vendor.sec"; echo "STEP 4b vendor: ${D}s"
+
+      - name: 5. write .config
+        id: config
+        run: |
+          T0=$(date +%s)
+          cd immortalwrt
+          cat > .config <<'EOF'
+          CONFIG_TARGET_rockchip=y
+          CONFIG_TARGET_rockchip_armv8=y
+          CONFIG_TARGET_rockchip_armv8_DEVICE_widora_mangopi-m28c=y
+          CONFIG_TARGET_ROOTFS_PARTSIZE=512
+          CONFIG_PACKAGE_luci-mod-admin-full=y
+          CONFIG_LUCI_LANG_zh_Hans=y
+          CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+          CONFIG_PACKAGE_luci-i18n-firewall-zh-cn=y
+          CONFIG_PACKAGE_luci-i18n-ttyd-zh-cn=y
+          CONFIG_PACKAGE_luci-app-firewall=y
+          CONFIG_PACKAGE_luci-app-attendedsysupgrade=y
+          CONFIG_PACKAGE_luci-theme-argon=y
+          CONFIG_PACKAGE_luci-app-argon-config=y
+          CONFIG_PACKAGE_ucode-mod-math=y
+          CONFIG_PACKAGE_luci-app-oaf=y
+          CONFIG_PACKAGE_kmod-oaf=y
+          CONFIG_PACKAGE_appfilter=y
+          CONFIG_PACKAGE_smartdns=y
+          CONFIG_PACKAGE_luci-app-smartdns=y
+          CONFIG_PACKAGE_adguardhome=y
+          CONFIG_PACKAGE_luci-app-adguardhome=y
+          CONFIG_PACKAGE_luci-app-3ginfo-lite=y
+          CONFIG_PACKAGE_luci-app-cpufreq=y
+          CONFIG_PACKAGE_luci-app-fancontrol=y
+          CONFIG_PACKAGE_fancontrol=y
+          CONFIG_PACKAGE_luci-app-qmodem-next=y
+          CONFIG_PACKAGE_luci-i18n-qmodem-next-zh-cn=y
+          CONFIG_PACKAGE_qmodem=y
+          CONFIG_PACKAGE_tom_modem=y
+          CONFIG_PACKAGE_ubus-at-daemon=y
+          CONFIG_PACKAGE_qmodem-smsd=y
+          CONFIG_PACKAGE_sms-forwarder-next=y
+          CONFIG_PACKAGE_kmod-usb-net-cdc-mbim=y
+          CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y
+          CONFIG_PACKAGE_kmod-usb-serial-option=y
+          CONFIG_PACKAGE_umbim=y
+          CONFIG_PACKAGE_uqmi=y
+          CONFIG_PACKAGE_luci-proto-mbim=y
+          CONFIG_PACKAGE_block-mount=y
+          CONFIG_PACKAGE_kmod-usb-storage=y
+          CONFIG_PACKAGE_kmod-usb-storage-uas=y
+          CONFIG_PACKAGE_kmod-fs-ext4=y
+          CONFIG_PACKAGE_kmod-fs-exfat=y
+          CONFIG_PACKAGE_kmod-fs-ntfs3=y
+          CONFIG_PACKAGE_kmod-fs-vfat=y
+          CONFIG_PACKAGE_vsftpd=y
+          CONFIG_PACKAGE_curl=y
+          CONFIG_PACKAGE_jq=y
+          CONFIG_PACKAGE_uhttpd=y
+          CONFIG_PACKAGE_luci-app-ttyd=y
+          CONFIG_PACKAGE_kmod-nft-tproxy=y
+          CONFIG_PACKAGE_kmod-nft-socket=y
+          CONFIG_PACKAGE_kmod-nft-fullcone=y
+          CONFIG_PACKAGE_kmod-tun=y
+          EOF
+          sed -i 's/^ *//' .config
+          make defconfig
+          echo "=== config sanity ==="
+          for k in CONFIG_PACKAGE_luci-theme-argon CONFIG_PACKAGE_luci-app-cpufreq CONFIG_PACKAGE_luci-app-fancontrol CONFIG_PACKAGE_luci-app-3ginfo-lite CONFIG_PACKAGE_qmodem CONFIG_PACKAGE_luci-app-oaf CONFIG_TARGET_ROOTFS_PARTSIZE; do
+            grep -q "^$k=y" .config && echo "OK $k" || echo "WARN missing $k"
+          done
+          # Kernel-config fingerprint: if the restored .config survives defconfig byte-identical,
+          # the cached kernel was configured for exactly this package selection and can be reused.
+          # Otherwise the kernel must reconfigure/rebuild for the extra kmods.
+          if [ ! -f /tmp/cached.config ]; then
+            echo "kernel_cfg_match=0" >> "$GITHUB_OUTPUT"; echo "KERNEL_CFG_MATCH=0 (no cached .config)"
+          elif diff -q /tmp/cached.config .config >/dev/null 2>&1; then
+            echo "kernel_cfg_match=1" >> "$GITHUB_OUTPUT"; echo "KERNEL_CFG_MATCH=1 (cached kernel config matches this .config)"
+          else
+            echo "kernel_cfg_match=0" >> "$GITHUB_OUTPUT"; echo "KERNEL_CFG_MATCH=0 (cached .config differs -> kernel rebuild)"
+          fi
+          D=$(( $(date +%s) - T0 )); echo "$D" > "$GITHUB_WORKSPACE/timing/05_config.sec"; echo "STEP 5 config: ${D}s"
+
+      - name: 6. preinstall m28c-vpn scripts
+        run: |
+          T0=$(date +%s)
+          cd immortalwrt
+          if [ -d ../m28c-vpn ]; then
+            mkdir -p files/usr/sbin files/etc/init.d \
+                     files/etc/hotplug.d/iface files/etc/hotplug.d/block
+            cp -f ../m28c-vpn/usr/sbin/mihomo-vpn        files/usr/sbin/
+            cp -f ../m28c-vpn/usr/sbin/nasctl            files/usr/sbin/
+            cp -f ../m28c-vpn/etc/init.d/mihomo-vpn      files/etc/init.d/
+            cp -f ../m28c-vpn/etc/init.d/nas             files/etc/init.d/
+            cp -f ../m28c-vpn/etc/hotplug.d/iface/99-mihomo-vpn files/etc/hotplug.d/iface/
+            cp -f ../m28c-vpn/etc/hotplug.d/block/50-nas-share  files/etc/hotplug.d/block/
+            chmod 755 files/usr/sbin/* files/etc/init.d/*
+            echo "m28c-vpn preinstalled"
+          else
+            echo "no m28c-vpn dir, skip"
+          fi
+          D=$(( $(date +%s) - T0 )); echo "$D" > "$GITHUB_WORKSPACE/timing/06_vpn.sec"; echo "STEP 6 vpn: ${D}s"
+
+      - name: 6b. add static mihomo binary
+        run: |
+          T0=$(date +%s)
+          cd immortalwrt
+          mkdir -p files/usr/bin
+          wget -qO- https://github.com/MetaCubeX/mihomo/releases/download/v1.19.18/mihomo-linux-arm64-v1.19.18.gz | gunzip > files/usr/bin/mihomo
+          chmod 755 files/usr/bin/mihomo
+          files/usr/bin/mihomo -v || true
+          D=$(( $(date +%s) - T0 )); echo "$D" > "$GITHUB_WORKSPACE/timing/06b_mihomo.sec"; echo "STEP 6b mihomo: ${D}s"
+
+      # mtime fix: git checkout + patch steps rewrite tree files with "now", which is newer than
+      # every restored build stamp -> make would recompile everything. Touch the stamps so they
+      # are newer than the tree. The kernel build dir is deliberately EXCLUDED when the cached
+      # kernel config does not match this .config, otherwise make would skip the required
+      # kernel reconfigure and the extra kmods would fail to build.
+      - name: 6c. touch restored stamps (mtime must not trigger rebuilds)
+        run: |
+          T0=$(date +%s)
+          cd immortalwrt
+          KERNEL_CFG_MATCH="${{ steps.config.outputs.kernel_cfg_match }}"
+          STAMP_NAMES="-name .built* -o -name .configured* -o -name .prepared*"
+          if [ "$KERNEL_CFG_MATCH" = "1" ]; then
+            find staging_dir build_dir \( -name '.built*' -o -name '.configured*' -o -name '.prepared*' \) 2>/dev/null | xargs -r touch
+            echo "touched ALL build stamps (kernel config matches the cache)"
+          else
+            find staging_dir build_dir \( -path 'build_dir/target-*/linux-rockchip_armv8' -prune \) -o \
+                 \( -name '.built*' -o -name '.configured*' -o -name '.prepared*' \) -print 2>/dev/null | xargs -r touch
+            echo "touched build stamps EXCEPT the kernel build dir (kernel will rebuild for this .config)"
+          fi
+          # staged install stamps: files are already in staging_dir from the cache, do not re-run install
+          find staging_dir -path '*/stamp/*' -type f 2>/dev/null | xargs -r touch
+          echo "stamps touched: $(find staging_dir build_dir -name '.built*' 2>/dev/null | wc -l) built-stamps"
+          D=$(( $(date +%s) - T0 )); echo "$D" > "$GITHUB_WORKSPACE/timing/06c_touch.sec"; echo "STEP 6c touch: ${D}s"
+
+      - name: 7. prepare (skip tools/toolchain + download on hit; kernel only when needed)
+        id: prep
+        run: |
+          T0=$(date +%s)
+          cd immortalwrt
+          set +e
+          TOOLCHAIN_HIT="${{ steps.audit.outputs.toolchain_hit }}"
+          KERNEL_FILE_HIT="${{ steps.audit.outputs.kernel_file_hit }}"
+          KERNEL_CFG_MATCH="${{ steps.config.outputs.kernel_cfg_match }}"
+          DOWNLOAD_SKIP=0
+          SAVE=0
+          if [ "$TOOLCHAIN_HIT" = "1" ]; then
+            echo "TOOLCHAIN_HIT=1 -> skip tools/install + toolchain/install"
+            DOWNLOAD_SKIP=1
+          else
+            echo "TOOLCHAIN_HIT=0 -> building host tools + toolchain from scratch"
+            make -j$(nproc) tools/install toolchain/install V=s > "$GITHUB_WORKSPACE/prep.log" 2>&1
+            RC=$?
+            if [ "$RC" != "0" ]; then tail -n 100 "$GITHUB_WORKSPACE/prep.log"; D=$(( $(date +%s) - T0 )); echo "$D" > "$GITHUB_WORKSPACE/timing/07_prepare.sec"; exit 1; fi
+            SAVE=1
+            DOWNLOAD_SKIP=0
+          fi
+          if [ "$KERNEL_FILE_HIT" = "1" ] && [ "$KERNEL_CFG_MATCH" = "1" ]; then
+            echo "KERNEL_HIT=1 -> kernel restored from cache and its config matches, skip kernel build"
+          else
+            echo "KERNEL_HIT=0 -> building kernel + headers for this .config"
+            make -j$(nproc) target/linux/compile V=s > "$GITHUB_WORKSPACE/kernel.log" 2>&1
+            RC=$?
+            if [ "$RC" != "0" ]; then tail -n 120 "$GITHUB_WORKSPACE/kernel.log"; D=$(( $(date +%s) - T0 )); echo "$D" > "$GITHUB_WORKSPACE/timing/07_prepare.sec"; exit 1; fi
+            SAVE=1
+            DOWNLOAD_SKIP=0
+          fi
+          if [ "$DOWNLOAD_SKIP" = "1" ]; then
+            echo "dl restored from cache for this .config -> skip make download"
+          else
+            echo "running make download (cache miss for some sources)"
+            make download -j8 || true
+          fi
+          D=$(( $(date +%s) - T0 )); echo "$D" > "$GITHUB_WORKSPACE/timing/07_prepare.sec"
+          echo "save_cache=$SAVE" >> "$GITHUB_OUTPUT"
+          echo "kernel_hit=$([ "$KERNEL_FILE_HIT" = "1" ] && [ "$KERNEL_CFG_MATCH" = "1" ] && echo 1 || echo 0)" >> "$GITHUB_OUTPUT"
+          echo "STEP 7 prepare: ${D}s (TOOLCHAIN_HIT=$TOOLCHAIN_HIT KERNEL_HIT=$([ "$KERNEL_FILE_HIT" = "1" ] && [ "$KERNEL_CFG_MATCH" = "1" ] && echo 1 || echo 0) SAVE=$SAVE)"
+
+      - name: 8. build
+        run: |
+          T0=$(date +%s)
+          cd immortalwrt
+          set -o pipefail
+          set +e
+          ( make -j$(nproc) V=s 2>&1 || make -j1 V=s 2>&1 ) | tee "$GITHUB_WORKSPACE/build.log"
+          RC=$?
+          D=$(( $(date +%s) - T0 )); echo "$D" > "$GITHUB_WORKSPACE/timing/08_build.sec"; date +%s > "$GITHUB_WORKSPACE/timing/.after_build"
+          echo "STEP 8 build: ${D}s"
+          exit $RC
+
+      - name: 8b. publish build log on failure
+        if: failure()
+        run: |
+          tail -n 400 build.log > build-error.txt 2>/dev/null || echo "no log" > build-error.txt
+          git config user.name "ci-bot"
+          git config user.email "ci-bot@users.noreply.github.com"
+          git add -f build-error.txt
+          git commit -m "ci: build error log [skip ci]" || true
+          git push || true
+
+      - name: 9. collect images
+        run: |
+          T0=$(date +%s)
+          mkdir -p out
+          find immortalwrt/bin/targets/rockchip/armv8 -maxdepth 1 -name "*m28c*" -exec cp -v {} out/ \;
+          ls -lh out/
+          D=$(( $(date +%s) - T0 )); echo "$D" > "$GITHUB_WORKSPACE/timing/09_collect.sec"; echo "STEP 9 collect: ${D}s"
+
+      - name: 10. upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: immortalwrt-m28c-oaf
+          path: out/*
+          retention-days: 30
+
+      - name: 11. timing summary
+        if: always()
+        run: |
+          cd "$GITHUB_WORKSPACE/timing" 2>/dev/null || exit 0
+          RUN_START=$(cat .run_start 2>/dev/null || echo 0)
+          AFTER_DEPS=$(cat .after_deps 2>/dev/null || echo "")
+          AFTER_RESTORE=$(cat .after_restore 2>/dev/null || echo "")
+          echo "================ BUILD TIMING (seconds) ================"
+          if [ -n "$AFTER_DEPS" ] && [ -n "$AFTER_RESTORE" ]; then
+            echo "  setup_checkout_free_disk_deps: $(( AFTER_DEPS - RUN_START - $(cat 01_free_disk.sec 2>/dev/null || echo 0) - $(cat 02_deps.sec 2>/dev/null || echo 0) ))"
+            echo "  cache_restore: $(( AFTER_RESTORE - AFTER_DEPS ))"
+          fi
+          for f in $(ls *.sec 2>/dev/null | sort); do
+            echo "  ${f%.sec}: $(cat "$f")"
+          done
+          echo "  run_total_so_far: $(( $(date +%s) - RUN_START ))"
+          echo "  TOOLCHAIN_HIT=${{ steps.audit.outputs.toolchain_hit }} KERNEL_HIT=${{ steps.prep.outputs.kernel_hit }} HOST_BUILD_DIR_HIT=${{ steps.audit.outputs.host_hit }}"
+          echo "========================================================"
+
+      # Save the cache only when this run had to (re)build the toolchain and/or the kernel;
+      # a pure cache hit needs no new cache.
+      - name: 12. save build cache (only when toolchain/kernel were rebuilt)
+        if: always() && steps.prep.outputs.save_cache == '1'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            immortalwrt/staging_dir
+            immortalwrt/dl
+            immortalwrt/feeds
+            immortalwrt/.config
+            immortalwrt/build_dir/target-aarch64_generic_musl/linux-rockchip_armv8
+            immortalwrt/build_dir/host
+            immortalwrt/build_dir/hostpkg
+            immortalwrt/build_dir/toolchain-aarch64_generic_gcc-14.3.0_musl
+          key: m28c-build-${{ inputs.cache_tag }}-${{ github.run_id }}
