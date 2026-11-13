@@ -329,8 +329,11 @@ jobs:
             echo "SMK=$SMK"
             if [ -n "$SMK" ]; then tail -n 6 "$SMK"; fi
             echo
-            echo "===== artifacts (bin/packages) ====="
-            find bin/packages -maxdepth 3 -name '*oaf*' -o -maxdepth 3 -name 'appfilter*' 2>/dev/null || true
+            echo "===== artifacts (bin/packages = userspace/feed; bin/targets = kmod apks on apk builds) ====="
+            find bin/packages -maxdepth 3 \( -name '*oaf*' -o -name 'appfilter*' \) 2>/dev/null || true
+            find bin/targets -path '*/packages/*' \( -name '*oaf*' -o -name 'appfilter*' \) 2>/dev/null || true
+            echo "--- every kmod-oaf apk produced (feed pkg + vendored OpenAppFilter pkg share the name) ---"
+            find bin -name 'kmod-oaf*.apk' -exec ls -l {} \; 2>/dev/null || true
           } 2>&1 | tee "$GITHUB_WORKSPACE/diagnostics.log" || true
 
       - name: 15. artifact assertions (all must exist)
@@ -339,15 +342,17 @@ jobs:
           cd immortalwrt
           RC=$(cat /tmp/pkgcompile.rc 2>/dev/null || echo 1)
           KO=$(find build_dir -path '*open-app-filter*' -name 'oaf.ko' 2>/dev/null | head -n1)
-          APK_KO=$(find bin/packages -name 'kmod-oaf*.apk' 2>/dev/null | head -n1)
+          # apk 构建下 kernel module 的 .apk 落在 bin/targets/<board>/<sub>/packages/，不在 bin/packages
+          APK_KO=$(find bin/packages bin/targets -name 'kmod-oaf*.apk' 2>/dev/null | head -n1)
           APK_APP=$(find bin/packages -name 'appfilter*.apk' 2>/dev/null | head -n1)
           APK_LUCI=$(find bin/packages -name 'luci-app-oaf*.apk' 2>/dev/null | head -n1)
-          IPK_KO=$(find bin/packages -name 'kmod-oaf*.ipk' 2>/dev/null | head -n1)
+          IPK_KO=$(find bin/packages bin/targets -name 'kmod-oaf*.ipk' 2>/dev/null | head -n1)
           IPK_APP=$(find bin/packages -name 'appfilter*.ipk' 2>/dev/null | head -n1)
           IPK_LUCI=$(find bin/packages -name 'luci-app-oaf*.ipk' 2>/dev/null | head -n1)
           echo "package/compile rc = $RC"
           echo "oaf.ko            = ${KO:-MISSING}"
           echo "kmod-oaf .apk     = ${APK_KO:-MISSING}"
+          echo "kmod-oaf apks found:"; find bin/packages bin/targets -name 'kmod-oaf*.apk' 2>/dev/null || true
           echo "appfilter .apk    = ${APK_APP:-MISSING}"
           echo "luci-app-oaf .apk = ${APK_LUCI:-MISSING}"
           echo "kmod-oaf .ipk     = ${IPK_KO:-none}"
