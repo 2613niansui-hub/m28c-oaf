@@ -281,6 +281,19 @@ jobs:
           for k in CONFIG_PACKAGE_luci-theme-argon CONFIG_PACKAGE_luci-app-cpufreq CONFIG_PACKAGE_luci-app-fancontrol CONFIG_PACKAGE_luci-app-3ginfo-lite CONFIG_PACKAGE_qmodem CONFIG_PACKAGE_luci-app-oaf CONFIG_TARGET_ROOTFS_PARTSIZE; do
             grep -q "^$k=y" .config && echo "OK $k" || echo "WARN missing $k"
           done
+          # Sanity guard: if the target tree does not know the device, defconfig silently drops it
+          # and the build produces a default device image instead (collect/upload then go green
+          # with an EMPTY artifact). Fail fast here instead.
+          if grep -q '^CONFIG_TARGET_rockchip_armv8_DEVICE_widora_mangopi-m28c=y' .config; then
+            echo "OK device widora_mangopi-m28c selected"
+          else
+            echo "FATAL: device widora_mangopi-m28c was dropped by defconfig -> this tree cannot build M28C"
+            echo "--- devices selected in .config: ---"
+            grep -E '^CONFIG_TARGET_rockchip_armv8_DEVICE_[A-Za-z0-9_.-]+=y' .config || echo "(none)"
+            echo "--- devices defined by the tree: ---"
+            for f in target/linux/rockchip/image/*.mk; do [ -f "$f" ] && grep -h '^define Device/' "$f" | sed 's/^define Device\///'; done
+            exit 1
+          fi
           # Kernel-config fingerprint: the kernel .config depends on the target and the selected
           # kmod-* packages, NOT on userspace package choices (rootfs size, themes, tools, ...).
           # Compare only that subset, so a userspace-only .config change does not force a kernel
@@ -420,6 +433,12 @@ jobs:
           mkdir -p out
           find immortalwrt/bin/targets/rockchip/armv8 -maxdepth 1 -name "*m28c*" -exec cp -v {} out/ \;
           ls -lh out/
+          # fail instead of uploading nothing: an empty out/ means the M28C image was never built
+          if ! ls out/* >/dev/null 2>&1; then
+            echo "FATAL: no *m28c* image in immortalwrt/bin/targets/rockchip/armv8"
+            ls -lh immortalwrt/bin/targets/rockchip/armv8/ 2>/dev/null || echo "(dir missing)"
+            exit 1
+          fi
           D=$(( $(date +%s) - T0 )); echo "$D" > "$GITHUB_WORKSPACE/timing/09_collect.sec"; echo "STEP 9 collect: ${D}s"
 
       - name: 10. upload artifact
