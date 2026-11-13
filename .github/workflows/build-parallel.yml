@@ -124,6 +124,22 @@ jobs:
           restore-keys: |
             ${{ env.CACHE_TAG }}-${{ hashFiles('.github/scripts/setup-tree.sh') }}-${{ env.TREE_COMMIT }}-${{ env.FEEDS_MODE }}
 
+      - name: 2c. repair cached tree (cache may predate config/ inclusion)
+        run: |
+          if [ -d immortalwrt ]; then
+            cd immortalwrt
+            if [ ! -d config ] || [ ! -f feeds.conf.default ]; then
+              echo "cached tree is missing tracked files -> git reset --hard"
+              git reset --hard -q
+              for f in target/linux/generic/config-6.12 target/linux/rockchip/config-6.12; do
+                if [ -f "$f" ] && ! grep -q 'CONFIG_WERROR' "$f"; then printf '# CONFIG_WERROR is not set\n' >> "$f"; fi
+              done
+            fi
+            test -d config
+            echo "tree repair ok: config files=$(ls config | wc -l) feeds.conf.default=$(test -f feeds.conf.default && echo present || echo missing)"
+          else
+            echo "no cached tree yet -> setup will clone"
+          fi
       - name: 3. setup tree + feeds + patches + vendor + files + .config
         env:
           FORCE_CONFIG: "1"
@@ -131,18 +147,7 @@ jobs:
           T0=$(date +%s)
           bash .github/scripts/setup-tree.sh
           echo "prepare_setup_seconds=$(( $(date +%s) - T0 ))" | tee -a timings.txt
-      - name: 3b. repair incomplete cached tree (cache predates config/ inclusion)
-        run: |
-          cd immortalwrt
-          if [ ! -d config ] || [ ! -f feeds.conf.default ]; then
-            echo "cached tree is missing tracked files -> git reset --hard"
-            git reset --hard -q
-            for f in target/linux/generic/config-6.12 target/linux/rockchip/config-6.12; do
-              if [ -f "$f" ] && ! grep -q 'CONFIG_WERROR' "$f"; then printf '# CONFIG_WERROR is not set\n' >> "$f"; fi
-            done
-          fi
-          test -d config
-          echo "tree repair check ok: config files=$(ls config | wc -l) feeds.conf.default=$(test -f feeds.conf.default && echo present || echo missing)"
+
 
       - name: 4. host tools + toolchain (skip only when the cached toolchain matches this tree)
         id: toolchain
@@ -353,23 +358,28 @@ jobs:
           restore-keys: |
             ${{ env.CACHE_TAG }}-${{ hashFiles('.github/scripts/setup-tree.sh') }}-${{ env.TREE_COMMIT }}-${{ env.FEEDS_MODE }}
 
+      - name: 2c. repair cached tree (cache may predate config/ inclusion)
+        run: |
+          if [ -d immortalwrt ]; then
+            cd immortalwrt
+            if [ ! -d config ] || [ ! -f feeds.conf.default ]; then
+              echo "cached tree is missing tracked files -> git reset --hard"
+              git reset --hard -q
+              for f in target/linux/generic/config-6.12 target/linux/rockchip/config-6.12; do
+                if [ -f "$f" ] && ! grep -q 'CONFIG_WERROR' "$f"; then printf '# CONFIG_WERROR is not set\n' >> "$f"; fi
+              done
+            fi
+            test -d config
+            echo "tree repair ok: config files=$(ls config | wc -l) feeds.conf.default=$(test -f feeds.conf.default && echo present || echo missing)"
+          else
+            echo "no cached tree yet -> setup will clone"
+          fi
       - name: 3. setup tree (cache hit -> no clone)
         run: |
           T0=$(date +%s)
           bash .github/scripts/setup-tree.sh
           echo "job_setup_seconds=$(( $(date +%s) - T0 ))" | tee -a timing-${{ matrix.group }}.txt
-      - name: 3b. repair incomplete cached tree (cache predates config/ inclusion)
-        run: |
-          cd immortalwrt
-          if [ ! -d config ] || [ ! -f feeds.conf.default ]; then
-            echo "cached tree is missing tracked files -> git reset --hard"
-            git reset --hard -q
-            for f in target/linux/generic/config-6.12 target/linux/rockchip/config-6.12; do
-              if [ -f "$f" ] && ! grep -q 'CONFIG_WERROR' "$f"; then printf '# CONFIG_WERROR is not set\n' >> "$f"; fi
-            done
-          fi
-          test -d config
-          echo "tree repair check ok: config files=$(ls config | wc -l) feeds.conf.default=$(test -f feeds.conf.default && echo present || echo missing)"
+
 
       - name: 4. compile group ${{ matrix.group }} (${{ matrix.ndirs }} dirs)
         env:
@@ -510,23 +520,28 @@ jobs:
           restore-keys: |
             ${{ env.CACHE_TAG }}-${{ hashFiles('.github/scripts/setup-tree.sh') }}-${{ env.TREE_COMMIT }}-${{ env.FEEDS_MODE }}
 
+      - name: 2c. repair cached tree (cache may predate config/ inclusion)
+        run: |
+          if [ -d immortalwrt ]; then
+            cd immortalwrt
+            if [ ! -d config ] || [ ! -f feeds.conf.default ]; then
+              echo "cached tree is missing tracked files -> git reset --hard"
+              git reset --hard -q
+              for f in target/linux/generic/config-6.12 target/linux/rockchip/config-6.12; do
+                if [ -f "$f" ] && ! grep -q 'CONFIG_WERROR' "$f"; then printf '# CONFIG_WERROR is not set\n' >> "$f"; fi
+              done
+            fi
+            test -d config
+            echo "tree repair ok: config files=$(ls config | wc -l) feeds.conf.default=$(test -f feeds.conf.default && echo present || echo missing)"
+          else
+            echo "no cached tree yet -> setup will clone"
+          fi
       - name: 3. setup tree (cache hit -> no clone)
         run: |
           T0=$(date +%s)
           bash .github/scripts/setup-tree.sh
           echo "assemble_setup_seconds=$(( $(date +%s) - T0 ))" | tee -a timings.txt
-      - name: 3b. repair incomplete cached tree (cache predates config/ inclusion)
-        run: |
-          cd immortalwrt
-          if [ ! -d config ] || [ ! -f feeds.conf.default ]; then
-            echo "cached tree is missing tracked files -> git reset --hard"
-            git reset --hard -q
-            for f in target/linux/generic/config-6.12 target/linux/rockchip/config-6.12; do
-              if [ -f "$f" ] && ! grep -q 'CONFIG_WERROR' "$f"; then printf '# CONFIG_WERROR is not set\n' >> "$f"; fi
-            done
-          fi
-          test -d config
-          echo "tree repair check ok: config files=$(ls config | wc -l) feeds.conf.default=$(test -f feeds.conf.default && echo present || echo missing)"
+
 
       - name: 4. download all package artifacts
         uses: actions/download-artifact@v4
