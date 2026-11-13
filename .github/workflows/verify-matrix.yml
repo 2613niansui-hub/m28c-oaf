@@ -197,9 +197,9 @@ jobs:
           - area: oaf
             pkgs: "feeds/packages/open-app-filter OpenAppFilter/luci-app-oaf"
           - area: qmodem-core
-            pkgs: "qmodem tom_modem ubus-at-daemon"
+            pkgs: "feeds/qmodem/application/qmodem feeds/qmodem/application/tom_modem feeds/qmodem/application/ubus_at_daemon"
           - area: qmodem-sms
-            pkgs: "qmodem-smsd sms-forwarder-next libqmodem-sms modem_scan luci-app-qmodem-next"
+            pkgs: "feeds/qmodem/application/qmodem_smsd feeds/qmodem/application/sms_forwarder_next feeds/qmodem/application/libqmodem-sms feeds/qmodem/application/modem_scan feeds/qmodem/luci/luci-app-qmodem-next"
           - area: ui-theme
             pkgs: "luci-theme-argon luci-app-argon-config fancontrol luci-app-fancontrol"
           - area: ui-apps
@@ -289,8 +289,8 @@ jobs:
         run: |
           cd immortalwrt
           make defconfig >/dev/null
-          case "${{ matrix.area }}" in
-            oaf) echo "skip config check for feed-dir targets" ;;
+          case "${{ matrix.pkgs }}" in
+            feeds/*|OpenAppFilter/*) echo "skip config check for feed-dir targets" ;;
             *) for p in ${{ matrix.pkgs }}; do
                  grep -q "^CONFIG_PACKAGE_$p=y" .config && echo "CONFIG_OK $p" || echo "CONFIG_DROPPED $p"
                done ;;
@@ -299,7 +299,7 @@ jobs:
         run: |
           cd immortalwrt
           case "${{ matrix.area }}" in
-            oaf|kmods)
+            oaf|kmods|qmodem-core|qmodem-sms)
               if ls build_dir/target-*/linux-*/linux-*/.config >/dev/null 2>&1; then
                 echo "kernel .config restored from cache"
               else
