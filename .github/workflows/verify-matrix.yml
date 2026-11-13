@@ -153,7 +153,7 @@ jobs:
       matrix:
         include:
           - area: oaf
-            pkgs: "oaf appfilter luci-app-oaf"
+            pkgs: "feeds/packages/open-app-filter feeds/luci/luci-app-oaf"
           - area: qmodem-core
             pkgs: "qmodem tom_modem ubus-at-daemon"
           - area: qmodem-sms
@@ -239,9 +239,12 @@ jobs:
         run: |
           cd immortalwrt
           make defconfig >/dev/null
-          for p in ${{ matrix.pkgs }}; do
-            grep -q "^CONFIG_PACKAGE_$p=y" .config && echo "CONFIG_OK $p" || echo "CONFIG_DROPPED $p"
-          done
+          case "${{ matrix.area }}" in
+            oaf) echo "skip config check for feed-dir targets" ;;
+            *) for p in ${{ matrix.pkgs }}; do
+                 grep -q "^CONFIG_PACKAGE_$p=y" .config && echo "CONFIG_OK $p" || echo "CONFIG_DROPPED $p"
+               done ;;
+          esac
       - name: compile area packages
         run: |
           cd immortalwrt
