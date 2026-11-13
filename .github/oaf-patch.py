@@ -24,6 +24,9 @@ for ln in lines:
         dropping = True
         continue
     if dropping:
+        # 只删到本补丁自己的 endef 为止，后面的 $(eval ...) 是真实包定义，必须保留
+        if ln.strip() == 'endef':
+            dropping = False
         continue
     out.append(ln)
 s = '\n'.join(out).rstrip('\n') + '\n'
