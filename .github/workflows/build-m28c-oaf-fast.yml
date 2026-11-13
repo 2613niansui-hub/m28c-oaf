@@ -192,27 +192,25 @@ jobs:
           tail -n 2 oaf/src/Makefile
           D=$(( $(date +%s) - T0 )); echo "$D" > "$GITHUB_WORKSPACE/timing/04_oaf.sec"; echo "STEP 4 OAF: ${D}s"
 
-      - name: 4b. vendor argon theme + argon-config + fancontrol (not proper feeds)
+      - name: 4b. vendor fancontrol only (argon comes from pinned luci feed, has config page)
         run: |
           T0=$(date +%s)
           cd immortalwrt
-          git clone https://github.com/jerrykuku/luci-theme-argon.git /tmp/argon-theme
-          git -C /tmp/argon-theme checkout -q 3c8dc64bca054be0c184dc1dc9847b249710a466
-          mkdir -p package/luci-theme-argon
-          cp -r /tmp/argon-theme/. package/luci-theme-argon/
-          rm -rf package/luci-theme-argon/.git
-          git clone --depth 1 https://github.com/jerrykuku/luci-theme-argon.git /tmp/argon-master
-          cp -r /tmp/argon-master/compat/luci-app-argon-config package/luci-app-argon-config
-          rm -rf package/luci-app-argon-config/.git
           git clone --depth 1 https://github.com/immortalwrt/luci.git /tmp/iluci
           cp -r /tmp/iluci/applications/luci-app-fancontrol package/luci-app-fancontrol
           git clone --depth 1 https://github.com/immortalwrt/packages.git /tmp/ipkgs
           cp -r /tmp/ipkgs/utils/fancontrol package/fancontrol
           rm -rf package/luci-app-fancontrol/.git package/fancontrol/.git
-          # vendored from feed master: relative include ../../luci.mk breaks outside feed dir
           sed -i "s#include ../../luci.mk#include $(TOPDIR)/feeds/luci/luci.mk#" package/luci-app-fancontrol/Makefile
-          [ -f package/luci-app-argon-config/Makefile ] && sed -i "s#include ../../luci.mk#include $(TOPDIR)/feeds/luci/luci.mk#" package/luci-app-argon-config/Makefile
-          ls package/luci-theme-argon/Makefile package/luci-app-argon-config/Makefile package/luci-app-fancontrol/Makefile package/fancontrol/Makefile
+          ls package/luci-app-fancontrol/Makefile package/fancontrol/Makefile
+          # pinned luci feed already ships argon theme + config page (consistent snapshot)
+          ls feeds/luci/themes/luci-theme-argon/Makefile feeds/luci/applications/luci-app-argon-config/Makefile
+          # vendor cpufreq tool (luci-app-cpufreq DEPENDS on it; not present in a302626e tree)
+          mkdir -p package/cpufreq/files
+          for f in Makefile files/cpufreq.init files/cpufreq.uci files/cpufreq.config; do
+            curl -fsSL "https://raw.githubusercontent.com/immortalwrt/immortalwrt/master/package/emortal/cpufreq/$f" -o "package/cpufreq/$f"
+          done
+          ls package/cpufreq/Makefile package/cpufreq/files
           D=$(( $(date +%s) - T0 )); echo "$D" > "$GITHUB_WORKSPACE/timing/04b_vendor.sec"; echo "STEP 4b vendor: ${D}s"
 
       - name: 5. write .config
@@ -244,6 +242,7 @@ jobs:
           CONFIG_PACKAGE_luci-app-adguardhome=y
           CONFIG_PACKAGE_luci-app-3ginfo-lite=y
           CONFIG_PACKAGE_luci-app-cpufreq=y
+          CONFIG_PACKAGE_cpufreq=y
           CONFIG_PACKAGE_luci-app-fancontrol=y
           CONFIG_PACKAGE_fancontrol=y
           CONFIG_PACKAGE_luci-app-qmodem-next=y
@@ -282,15 +281,17 @@ jobs:
           for k in CONFIG_PACKAGE_luci-theme-argon CONFIG_PACKAGE_luci-app-cpufreq CONFIG_PACKAGE_luci-app-fancontrol CONFIG_PACKAGE_luci-app-3ginfo-lite CONFIG_PACKAGE_qmodem CONFIG_PACKAGE_luci-app-oaf CONFIG_TARGET_ROOTFS_PARTSIZE; do
             grep -q "^$k=y" .config && echo "OK $k" || echo "WARN missing $k"
           done
-          # Kernel-config fingerprint: if the restored .config survives defconfig byte-identical,
-          # the cached kernel was configured for exactly this package selection and can be reused.
-          # Otherwise the kernel must reconfigure/rebuild for the extra kmods.
+          # Kernel-config fingerprint: the kernel .config depends on the target and the selected
+          # kmod-* packages, NOT on userspace package choices (rootfs size, themes, tools, ...).
+          # Compare only that subset, so a userspace-only .config change does not force a kernel
+          # rebuild (a kmod change still does).
+          kfp() { grep -E '^CONFIG_(TARGET_|PACKAGE_kmod-)' "$1" | sort | sha256sum | cut -d' ' -f1; }
           if [ ! -f /tmp/cached.config ]; then
             echo "kernel_cfg_match=0" >> "$GITHUB_OUTPUT"; echo "KERNEL_CFG_MATCH=0 (no cached .config)"
-          elif diff -q /tmp/cached.config .config >/dev/null 2>&1; then
-            echo "kernel_cfg_match=1" >> "$GITHUB_OUTPUT"; echo "KERNEL_CFG_MATCH=1 (cached kernel config matches this .config)"
+          elif [ "$(kfp /tmp/cached.config)" = "$(kfp .config)" ]; then
+            echo "kernel_cfg_match=1" >> "$GITHUB_OUTPUT"; echo "KERNEL_CFG_MATCH=1 (cached kernel .config is valid for this kmod selection)"
           else
-            echo "kernel_cfg_match=0" >> "$GITHUB_OUTPUT"; echo "KERNEL_CFG_MATCH=0 (cached .config differs -> kernel rebuild)"
+            echo "kernel_cfg_match=0" >> "$GITHUB_OUTPUT"; echo "KERNEL_CFG_MATCH=0 (kmod set differs -> kernel rebuild)"
           fi
           D=$(( $(date +%s) - T0 )); echo "$D" > "$GITHUB_WORKSPACE/timing/05_config.sec"; echo "STEP 5 config: ${D}s"
 
