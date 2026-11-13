@@ -58,6 +58,16 @@ jobs:
           mkdir -p feeds/packages/utils/attr/patches
           echo 'LS0tIGEvdG9vbHMvYXR0ci5jCisrKyBiL3Rvb2xzL2F0dHIuYwpAQCAtMTcsNiArMTcsNyBAQAogICovCiAKICNpbmNsdWRlICJjb25maWcuaCIKKyNpbmNsdWRlIDxsaWJnZW4uaD4KIAogI2luY2x1ZGUgPHN5cy90eXBlcy5oPgogI2luY2x1ZGUgPHN5cy9wYXJhbS5oPgo=' | base64 -d > feeds/packages/utils/attr/patches/100-libgen.patch
 
+      - name: 3c. patch feed OAF package (warnings stay warnings)
+        run: |
+          cd immortalwrt
+          F=feeds/packages/net/open-app-filter/Makefile
+          if [ -f "$F" ] && ! grep -q OAFLOCALFIX "$F"; then
+            echo 'IyBPQUZMT0NBTEZJWDogT0FGIGRyaXZlciBjb2RlIGZyb20gMjAyNi0wNCBoYXMgbWFueSBHQ0MxNCB3YXJuaW5nczsga2VlcCB0aGVtIHdhcm5pbmdzCktDRkxBR1MgKz0gLVduby1lcnJvciAtV25vLWVycm9yPW1pc3NpbmctcHJvdG90eXBlcyAtV25vLWVycm9yPXVudXNlZC12YXJpYWJsZSAtV25vLWVycm9yPXVudXNlZC1idXQtc2V0LXZhcmlhYmxlIC1Xbm8tZXJyb3I9Zm9ybWF0IC1Xbm8tZXJyb3I9c3RyaWN0LXByb3RvdHlwZXMKCmRlZmluZSBCdWlsZC9QcmVwYXJlCgkkKGNhbGwgQnVpbGQvUHJlcGFyZS9EZWZhdWx0KQoJZm9yIGYgaW4gJChQS0dfQlVJTERfRElSKS9vYWYvc3JjLyouYzsgZG8gXAoJCXNlZCAtaSAnMWkgI3ByYWdtYSBHQ0MgZGlhZ25vc3RpYyBpZ25vcmVkICItV21pc3NpbmctcHJvdG90eXBlcyInICQkZjsgXAoJCXNlZCAtaSAnMWkgI3ByYWdtYSBHQ0MgZGlhZ25vc3RpYyBpZ25vcmVkICItV3VudXNlZC12YXJpYWJsZSInICQkZjsgXAoJCXNlZCAtaSAnMWkgI3ByYWdtYSBHQ0MgZGlhZ25vc3RpYyBpZ25vcmVkICItV3VudXNlZC1idXQtc2V0LXZhcmlhYmxlIicgJCRmOyBcCgkJc2VkIC1pICcxaSAjcHJhZ21hIEdDQyBkaWFnbm9zdGljIGlnbm9yZWQgIi1XZm9ybWF0IicgJCRmOyBcCglkb25lCmVuZGVm' | base64 -d >> "$F"
+            echo "OAF feed patched"
+          fi
+          tail -n 14 "$F"
+
       - name: 4. OAF pinned + vendor argon/fancontrol
         run: |
           cd immortalwrt
@@ -129,6 +139,7 @@ jobs:
           done
           echo "===== summary ====="
           grep -E 'RESULT_(OK|FAIL)' "$GITHUB_WORKSPACE/check.log"
+          if grep -q RESULT_FAIL "$GITHUB_WORKSPACE/check.log"; then exit 1; fi
 
       - name: 7. upload log
         if: always()
