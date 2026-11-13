@@ -94,26 +94,18 @@ jobs:
           printf '\nccflags-y += -Wno-error -Wno-error=missing-prototypes -Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-error=format -Wno-error=strict-prototypes\n' >> oaf/src/Makefile
           tail -n 2 oaf/src/Makefile
 
-      - name: 4b. vendor argon theme + argon-config + fancontrol (not proper feeds)
+      - name: 4b. vendor fancontrol only (argon comes from pinned luci feed, has config page)
         run: |
           cd immortalwrt
-          git clone https://github.com/jerrykuku/luci-theme-argon.git /tmp/argon-theme
-          git -C /tmp/argon-theme checkout -q 3c8dc64bca054be0c184dc1dc9847b249710a466
-          mkdir -p package/luci-theme-argon
-          cp -r /tmp/argon-theme/. package/luci-theme-argon/
-          rm -rf package/luci-theme-argon/.git
-          git clone --depth 1 https://github.com/jerrykuku/luci-theme-argon.git /tmp/argon-master
-          cp -r /tmp/argon-master/compat/luci-app-argon-config package/luci-app-argon-config
-          rm -rf package/luci-app-argon-config/.git
           git clone --depth 1 https://github.com/immortalwrt/luci.git /tmp/iluci
           cp -r /tmp/iluci/applications/luci-app-fancontrol package/luci-app-fancontrol
           git clone --depth 1 https://github.com/immortalwrt/packages.git /tmp/ipkgs
           cp -r /tmp/ipkgs/utils/fancontrol package/fancontrol
           rm -rf package/luci-app-fancontrol/.git package/fancontrol/.git
-          # vendored from feed master: relative include ../../luci.mk breaks outside feed dir
           sed -i "s#include ../../luci.mk#include $(TOPDIR)/feeds/luci/luci.mk#" package/luci-app-fancontrol/Makefile
-          [ -f package/luci-app-argon-config/Makefile ] && sed -i "s#include ../../luci.mk#include $(TOPDIR)/feeds/luci/luci.mk#" package/luci-app-argon-config/Makefile
-          ls package/luci-theme-argon/Makefile package/luci-app-argon-config/Makefile package/luci-app-fancontrol/Makefile package/fancontrol/Makefile
+          ls package/luci-app-fancontrol/Makefile package/fancontrol/Makefile
+          # pinned luci feed already ships argon theme + config page (consistent snapshot)
+          ls feeds/luci/themes/luci-theme-argon/Makefile feeds/luci/applications/luci-app-argon-config/Makefile
 
       - name: 5. write .config
         run: |
