@@ -41,9 +41,10 @@ jobs:
           printf '\nsrc-git qmodem https://github.com/FUjr/QModem.git^0988085b887346ae9477ef2e77abe2f797bd2c4a\n' >> feeds.conf.default
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-          # 关键：feeds/packages 里也有一个旧版 open-app-filter(2026.04.20)，会盖掉我们 clone 的 7.0.2
+          # 关键：feeds/packages 里也有旧版 open-app-filter，会盖掉 clone 的 7.0.2
           rm -rf feeds/packages/net/open-app-filter
-          echo "removed stale feed open-app-filter"
+          rm -f package/feeds/packages/open-app-filter
+          echo "removed stale feed open-app-filter (dir + link)"
           echo "=== kernel version ==="
           grep -E 'KERNEL_PATCHVER' target/linux/rockchip/Makefile || true
           echo "=== m28c device present? ==="
@@ -54,6 +55,15 @@ jobs:
           cd immortalwrt
           git clone --depth 1 https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter
           ls package/OpenAppFilter
+
+      - name: 4a. fallback: patch feed open-app-filter if it still exists
+        run: |
+          cd immortalwrt
+          if [ -f feeds/packages/net/open-app-filter/Makefile ]; then
+            python3 ../.github/oaf-patch.py feeds/packages/net/open-app-filter/Makefile
+          else
+            echo "feed open-app-filter absent (good: using clone)"
+          fi
 
       - name: 4b. vendor argon config page (not in master luci feed)
         run: |
