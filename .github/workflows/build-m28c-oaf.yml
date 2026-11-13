@@ -76,15 +76,32 @@ jobs:
             grep -E '^(PKG_VERSION|PKG_HASH)' feeds/packages/utils/attr/Makefile
           fi
 
-      - name: 3c. patch feed OAF package (warnings stay warnings)
+      - name: 3c. patch feed OAF package correctly (define BEFORE eval + ccflags-y)
         run: |
           cd immortalwrt
-          F=feeds/packages/net/open-app-filter/Makefile
-          if [ -f "$F" ] && ! grep -q OAFLOCALFIX "$F"; then
-            echo 'IyBPQUZMT0NBTEZJWDogT0FGIGRyaXZlciBjb2RlIGZyb20gMjAyNi0wNCBoYXMgbWFueSBHQ0MxNCB3YXJuaW5nczsga2VlcCB0aGVtIHdhcm5pbmdzCktDRkxBR1MgKz0gLVduby1lcnJvciAtV25vLWVycm9yPW1pc3NpbmctcHJvdG90eXBlcyAtV25vLWVycm9yPXVudXNlZC12YXJpYWJsZSAtV25vLWVycm9yPXVudXNlZC1idXQtc2V0LXZhcmlhYmxlIC1Xbm8tZXJyb3I9Zm9ybWF0IC1Xbm8tZXJyb3I9c3RyaWN0LXByb3RvdHlwZXMKCmRlZmluZSBCdWlsZC9QcmVwYXJlCgkkKGNhbGwgQnVpbGQvUHJlcGFyZS9EZWZhdWx0KQoJZm9yIGYgaW4gJChQS0dfQlVJTERfRElSKS9vYWYvc3JjLyouYzsgZG8gXAoJCXNlZCAtaSAnMWkgI3ByYWdtYSBHQ0MgZGlhZ25vc3RpYyBpZ25vcmVkICItV21pc3NpbmctcHJvdG90eXBlcyInICQkZjsgXAoJCXNlZCAtaSAnMWkgI3ByYWdtYSBHQ0MgZGlhZ25vc3RpYyBpZ25vcmVkICItV3VudXNlZC12YXJpYWJsZSInICQkZjsgXAoJCXNlZCAtaSAnMWkgI3ByYWdtYSBHQ0MgZGlhZ25vc3RpYyBpZ25vcmVkICItV3VudXNlZC1idXQtc2V0LXZhcmlhYmxlIicgJCRmOyBcCgkJc2VkIC1pICcxaSAjcHJhZ21hIEdDQyBkaWFnbm9zdGljIGlnbm9yZWQgIi1XZm9ybWF0IicgJCRmOyBcCglkb25lCmVuZGVm' | base64 -d >> "$F"
-            echo "OAF feed patched"
-          fi
-          tail -n 14 "$F"
+          python3 - <<'PY'
+          import io
+          p = 'feeds/packages/net/open-app-filter/Makefile'
+          s = io.open(p, encoding='utf-8').read()
+          if 'OAFLOCALFIX' in s:
+              print('already patched')
+              raise SystemExit(0)
+          block = (
+              '# OAFLOCALFIX: OAF 驱动代码有大量 GCC14 告警，这里要求 kbuild 把它们当警告\n'
+              'define Build/Prepare\n'
+              '\t$(call Build/Prepare/Default)\n'
+              '\tprintf \'ccflags-y += -Wno-error -Wno-error=missing-prototypes -Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-error=format -Wno-error=strict-prototypes\\n\' >> $(PKG_BUILD_DIR)/oaf/src/Makefile\n'
+              '\tfor f in $(PKG_BUILD_DIR)/oaf/src/*.c; do for w in missing-prototypes unused-variable unused-but-set-variable format strict-prototypes; do sed -i \"1i #pragma GCC diagnostic ignored \\\"-W$$w\\\"\" $$f; done; done\n'
+              'endef\n\n'
+          )
+          i = s.find('$(eval $(call')
+          if i < 0:
+              print('eval anchor not found'); raise SystemExit(1)
+          s = s[:i] + block + s[i:]
+          io.open(p, 'w', encoding='utf-8', newline='\n').write(s)
+          print('patched before eval')
+          PY
+          grep -n -A4 OAFLOCALFIX feeds/packages/net/open-app-filter/Makefile | head -20
 
       - name: 4. add OpenAppFilter (pinned 569f93bf)
         run: |
