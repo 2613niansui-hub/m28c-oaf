@@ -1,0 +1,109 @@
+name: Build QModem apks for M28C (ImmortalWrt 25.12.2)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: 1. free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost /opt/hostedtoolcache || true
+          sudo apt-get clean
+          df -h /
+
+      - name: 2. install build deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential clang flex bison g++ gawk \
+            gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev \
+            python3 python3-setuptools python3-pyelftools python3-yaml \
+            libpython3-dev rsync swig unzip zlib1g-dev file wget \
+            libelf-dev bc device-tree-compiler
+
+      - name: 3. clone immortalwrt 25.12.2 + feeds (incl. QModem)
+        run: |
+          git clone --depth 1 --branch v25.12.2 https://github.com/immortalwrt/immortalwrt.git
+          cd immortalwrt
+          echo "src-git qmodem https://github.com/FUjr/QModem.git^0988085b887346ae9477ef2e77abe2f797bd2c4a" >> feeds.conf.default
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          echo "=== qmodem feed ==="
+          ls feeds/qmodem/ 2>/dev/null | head
+          git -C feeds/qmodem rev-parse HEAD 2>/dev/null
+
+      - name: 4. write .config from official release config (same kernel 6.12.103)
+        run: |
+          cd immortalwrt
+          curl -sSL -o .config "https://downloads.immortalwrt.org/releases/25.12.2/targets/rockchip/armv8/config.buildinfo"
+          # 关闭 buildbot 专用全量选项，加快构建（不影响内核 ABI）
+          sed -i 's/^CONFIG_ALL_KMODS=y/# CONFIG_ALL_KMODS is not set/' .config || true
+          sed -i 's/^CONFIG_ALL_NONSHARED=y/# CONFIG_ALL_NONSHARED is not set/' .config || true
+          sed -i 's/^CONFIG_TARGET_ALL_PROFILES=y/# CONFIG_TARGET_ALL_PROFILES is not set/' .config || true
+          # 只保留 M28C 设备
+          sed -i 's/^CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_\(.*\)=y/# CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_\1 is not set/' .config || true
+          sed -i 's/^CONFIG_TARGET_DEVICE_PACKAGES_rockchip_armv8_DEVICE_\(.*\)=.*/# CONFIG_TARGET_DEVICE_PACKAGES_rockchip_armv8_DEVICE_\1 is not set/' .config || true
+          cat >> .config <<'EOF'
+          CONFIG_TARGET_MULTI_PROFILE=y
+          CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_widora_mangopi-m28c=y
+          CONFIG_TARGET_DEVICE_PACKAGES_rockchip_armv8_DEVICE_widora_mangopi-m28c=""
+          CONFIG_PACKAGE_luci-app-qmodem-next=y
+          CONFIG_PACKAGE_luci-i18n-qmodem-next-zh-cn=y
+          CONFIG_PACKAGE_qmodem=y
+          CONFIG_PACKAGE_tom_modem=y
+          CONFIG_PACKAGE_ubus-at-daemon=y
+          CONFIG_PACKAGE_qmodem-smsd=y
+          CONFIG_PACKAGE_sms-forwarder-next=y
+          CONFIG_PACKAGE_libqmodem-sms=y
+          CONFIG_PACKAGE_modem_scan=y
+          CONFIG_PACKAGE_kmod-qmi_wwan_q=y
+          CONFIG_PACKAGE_kmod-qmi_wwan_f=y
+          CONFIG_PACKAGE_kmod-qmi_wwan_s=y
+          CONFIG_PACKAGE_kmod-usb-serial-option=y
+          CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y
+          CONFIG_PACKAGE_kmod-usb-net-cdc-mbim=y
+          CONFIG_PACKAGE_kmod-usb-wdm=y
+          CONFIG_PACKAGE_uqmi=y
+          CONFIG_PACKAGE_luci-proto-qmi=y
+          CONFIG_PACKAGE_luci-proto-mbim=y
+          EOF
+          make defconfig
+          echo "=== sanity ==="
+          for k in CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_widora_mangopi-m28c=y CONFIG_PACKAGE_luci-app-qmodem-next=y CONFIG_PACKAGE_qmodem=y CONFIG_PACKAGE_kmod-qmi_wwan_q=y CONFIG_KERNEL_FTRACE=y CONFIG_KERNEL_DEBUG_INFO_BTF=y; do
+            grep -q "^$k" .config && echo "OK $k" || echo "WARN dropped $k"
+          done
+
+      - name: 5. build packages (world)
+        run: |
+          cd immortalwrt
+          set -o pipefail
+          ( make -j$(nproc) V=s 2>&1 || make -j1 V=s 2>&1 ) | tee "$GITHUB_WORKSPACE/build.log"
+
+      - name: 6. publish log on failure
+        if: failure()
+        run: |
+          tail -n 600 build.log > build-error.txt 2>/dev/null || echo "no log" > build-error.txt
+
+      - name: 7. collect QModem apks
+        run: |
+          mkdir -p out
+          find immortalwrt/bin/targets/rockchip/armv8 -name "*.apk" \( -iname "*qmodem*" -o -iname "*modem*" -o -iname "*tom_modem*" -o -iname "*ubus-at-daemon*" -o -iname "*sms*" -o -iname "*qmi_wwan*" -o -iname "*libqmodem*" \) -exec cp -v {} out/ \;
+          cp -v immortalwrt/bin/targets/rockchip/armv8/kmods/*/*.apk out/ 2>/dev/null | grep -E "qmi_wwan|usb-wdm" || true
+          ls -lh out/ | head -40
+          test -n "$(ls -A out)" || { echo "NO APKS"; exit 1; }
+
+      - name: 8. upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qmodem-apks-25.12.2-m28c
+          path: out/*
+          retention-days: 30
