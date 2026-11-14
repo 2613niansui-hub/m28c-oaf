@@ -115,6 +115,12 @@ jobs:
           CONFIG_PACKAGE_block-mount=y
           EOF
           sed -i 's/^ *//' .config
+          # 关键：关闭内核 -Werror（否则 feed 的 open-app-filter 等第三方模块编译失败）
+          for f in target/linux/generic/config-6.12 target/linux/rockchip/config-6.12; do
+            [ -f "$f" ] || continue
+            sed -i 's/^CONFIG_WERROR=y/# CONFIG_WERROR is not set/' "$f"
+            grep -q 'CONFIG_WERROR' "$f" || printf '# CONFIG_WERROR is not set\n' >> "$f"
+          done
           make defconfig
           echo "=== config sanity ==="
           for k in CONFIG_TARGET_rockchip_armv8_DEVICE_widora_mangopi-m28c=y CONFIG_PACKAGE_kmod-fwx=y CONFIG_PACKAGE_fwxd=y CONFIG_PACKAGE_luci-app-fwx-dashboard=y CONFIG_PACKAGE_luci-app-fwx-appfilter=y CONFIG_PACKAGE_qmodem=y CONFIG_PACKAGE_luci-app-qmodem-next=y CONFIG_PACKAGE_luci-compat=y CONFIG_TARGET_ROOTFS_PARTSIZE=512; do
