@@ -1,4 +1,4 @@
-name: Diag config (FanchmWrt M28C)
+﻿name: Diag config (FanchmWrt M28C)
 
 on:
   workflow_dispatch:
@@ -40,6 +40,7 @@ jobs:
 
       - name: 3. write config and inspect
         run: |
+          set +e
           cd immortalwrt
           cat > .config <<'EOF'
           CONFIG_TARGET_rockchip=y
@@ -85,6 +86,10 @@ jobs:
           CONFIG_PACKAGE_kmod-fs-exfat=y
           CONFIG_PACKAGE_kmod-fs-ntfs3=y
           CONFIG_PACKAGE_block-mount=y
+          CONFIG_PACKAGE_luci-theme-fanchmwrt=y
+          CONFIG_PACKAGE_kmod-shortcut-fe=y
+          CONFIG_PACKAGE_kmod-fullconenat=y
+          CONFIG_PACKAGE_kmod-fullconenat-nft=y
           EOF
           sed -i 's/^ *//' .config
           make defconfig
@@ -96,7 +101,6 @@ jobs:
           ls target/linux/generic/config-6.12 target/linux/rockchip/armv8/config-6.12 2>&1
           grep -iE 'WERROR' target/linux/generic/config-6.12 target/linux/rockchip/armv8/config-6.12 2>/dev/null || echo "(no WERROR in target configs)"
           echo "########## DIAG: dependency chain of appfilter ##########"
-          grep -n "INSTALL" /dev/null 2>/dev/null; true
           for f in feeds/luci/applications/luci-app-appfilter/Makefile feeds/fanchmwrt/luci-app-fwx-appfilter/Makefile package/fcm/fwxd/Makefile package/fcm/fwx/Makefile; do
             echo "--- $f"; grep -nE 'DEPENDS|LUCI_DEPENDS' "$f" 2>/dev/null | head -5
           done
