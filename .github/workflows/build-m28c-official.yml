@@ -103,6 +103,8 @@ jobs:
           CONFIG_PACKAGE_kmod-qmi_wwan_f=y
           CONFIG_PACKAGE_kmod-qmi_wwan_s=y
           CONFIG_PACKAGE_qmodem-settings=y
+          CONFIG_PACKAGE_ppp=y
+          CONFIG_PACKAGE_ppp-mod-pppoe=y
           CONFIG_PACKAGE_m28c-fixes=y
           CONFIG_PACKAGE_kmod-tun=y
           CONFIG_PACKAGE_tailscale=y
