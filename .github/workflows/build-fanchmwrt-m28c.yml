@@ -1,4 +1,4 @@
-﻿name: Build FanchmWrt-feature M28C image (fwx + QModem)
+name: Build FanchmWrt-feature M28C image (fwx + QModem)
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 350
     steps:
-      - name: 0. checkout (for helper scripts)
+      - name: 0. checkout (helper scripts + custom package)
         uses: actions/checkout@v4
 
       - name: 1. free disk space
@@ -33,7 +33,7 @@ jobs:
             libpython3-dev rsync swig unzip zlib1g-dev file wget \
             libelf-dev bc device-tree-compiler
 
-      - name: 3. clone ImmortalWrt 25.12.2 (M28C native) + FanchmWrt sources
+      - name: 3. clone ImmortalWrt 25.12.2 (M28C native) + FanchmWrt sources + custom fixes pkg
         run: |
           git clone --depth 1 --branch v25.12.2 https://github.com/immortalwrt/immortalwrt.git
           git clone --depth 1 --branch fanchmwrt-25.12.6 https://github.com/fanchmwrt/fanchmwrt.git fanchm-src
@@ -46,8 +46,14 @@ jobs:
           ls immortalwrt/package/fcm
           # 校验 M28C 设备支持
           grep -A3 'Device/widora_mangopi-m28c' immortalwrt/target/linux/rockchip/image/armv8.mk | head -8
+          # 自定义修复包 m28c-fixes（QModem 静态资源软链接 / 中文 AT 说明 / IPv6 过滤）
+          cp -r .github/m28c-fixes immortalwrt/package/m28c-fixes
+          curl -fsSL -o immortalwrt/package/m28c-fixes/files/at_commands_zh.json \
+            "https://raw.githubusercontent.com/FUjr/QModem/0988085b887346ae9477ef2e77abe2f797bd2c4a/application/qmodem/files/usr/share/qmodem/at_commands_zh.json"
+          ls -l immortalwrt/package/m28c-fixes/
+          ls -l immortalwrt/package/m28c-fixes/files/
 
-      - name: 4. feeds (default + fanchmwrt-packages + qmodem)
+      - name: 4. feeds (default + fanchmwrt-packages + qmodem) + qmodem 源补丁
         run: |
           cd immortalwrt
           cat >> feeds.conf.default <<'EOF'
@@ -59,13 +65,16 @@ jobs:
           # feeds/packages 自带的 open-app-filter 会被 fwx UI 依赖拉入，需打 -Werror 抑制补丁
           if [ -f feeds/packages/net/open-app-filter/Makefile ]; then
             python3 ../.github/oaf-patch.py feeds/packages/net/open-app-filter/Makefile
-            # 双保险：给内核模块编译命令直接加 KCFLAGS=-Wno-error
             sed -i 's|M="$(PKG_BUILD_DIR)/oaf/src" modules|M="$(PKG_BUILD_DIR)/oaf/src" KCFLAGS="-Wno-error" modules|' feeds/packages/net/open-app-filter/Makefile
             grep -n 'KCFLAGS="-Wno-error"' feeds/packages/net/open-app-filter/Makefile || echo 'KCFLAGS patch NOT applied'
           fi
+          # QModem 补丁：修复 RM502Q-GL 的 AT+CGPADDR 混合格式解析（拨号状态红点问题）
+          python3 ../.github/patch-qmodem-generic.py feeds/qmodem/application/qmodem/files/usr/share/qmodem/generic.sh
+          grep -A4 'get_cgpaddr_ipv4()' feeds/qmodem/application/qmodem/files/usr/share/qmodem/generic.sh | head -6
           echo "=== feeds check ==="
           ls feeds/fanchmwrt/luci-app-fwx-dashboard 2>/dev/null | head -3
           ls feeds/qmodem/application/qmodem 2>/dev/null | head -3
+          ls feeds/qmodem/luci/luci-app-qmodem-next/po/ 2>/dev/null | head -5
 
       - name: 5. write .config
         run: |
@@ -94,8 +103,9 @@ jobs:
           CONFIG_PACKAGE_kmod-shortcut-fe=y
           CONFIG_PACKAGE_kmod-fullconenat=y
           CONFIG_PACKAGE_kmod-fullconenat-nft=y
-          # QModem
+          # QModem（含简体中文语言包）
           CONFIG_PACKAGE_luci-app-qmodem-next=y
+          CONFIG_PACKAGE_luci-i18n-qmodem-next-zh-cn=y
           CONFIG_PACKAGE_qmodem=y
           CONFIG_PACKAGE_tom_modem=y
           CONFIG_PACKAGE_ubus-at-daemon=y
@@ -106,6 +116,8 @@ jobs:
           CONFIG_PACKAGE_kmod-qmi_wwan_q=y
           CONFIG_PACKAGE_kmod-qmi_wwan_f=y
           CONFIG_PACKAGE_kmod-qmi_wwan_s=y
+          # M28C 自定义修复包
+          CONFIG_PACKAGE_m28c-fixes=y
           # 5G/USB/存储基础
           CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y
           CONFIG_PACKAGE_kmod-usb-net-cdc-mbim=y
@@ -122,7 +134,7 @@ jobs:
           CONFIG_PACKAGE_block-mount=y
           EOF
           sed -i 's/^ *//' .config
-          # 关键：关闭内核 -Werror（否则 feed 的 open-app-filter 等第三方模块编译失败）
+          # 关闭内核 -Werror（避免 feed 的 open-app-filter 等第三方模块编译失败）
           for f in target/linux/generic/config-6.12 target/linux/rockchip/config-6.12; do
             [ -f "$f" ] || continue
             sed -i 's/^CONFIG_WERROR=y/# CONFIG_WERROR is not set/' "$f"
@@ -130,7 +142,7 @@ jobs:
           done
           make defconfig
           echo "=== config sanity ==="
-          for k in CONFIG_TARGET_rockchip_armv8_DEVICE_widora_mangopi-m28c=y CONFIG_PACKAGE_kmod-fwx=y CONFIG_PACKAGE_fwxd=y CONFIG_PACKAGE_luci-app-fwx-dashboard=y CONFIG_PACKAGE_luci-app-fwx-appfilter=y CONFIG_PACKAGE_qmodem=y CONFIG_PACKAGE_luci-app-qmodem-next=y CONFIG_PACKAGE_luci-compat=y CONFIG_TARGET_ROOTFS_PARTSIZE=512; do
+          for k in CONFIG_TARGET_rockchip_armv8_DEVICE_widora_mangopi-m28c=y CONFIG_PACKAGE_kmod-fwx=y CONFIG_PACKAGE_fwxd=y CONFIG_PACKAGE_luci-app-fwx-dashboard=y CONFIG_PACKAGE_luci-app-fwx-appfilter=y CONFIG_PACKAGE_qmodem=y CONFIG_PACKAGE_luci-app-qmodem-next=y CONFIG_PACKAGE_luci-i18n-qmodem-next-zh-cn=y CONFIG_PACKAGE_m28c-fixes=y CONFIG_PACKAGE_luci-compat=y CONFIG_TARGET_ROOTFS_PARTSIZE=512; do
             grep -q "^$k" .config && echo "OK $k" || echo "WARN dropped $k"
           done
 
