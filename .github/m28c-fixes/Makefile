@@ -29,8 +29,6 @@ define Package/m28c-fixes/install
 	$(INSTALL_DIR) $(1)/www/luci-static/resources/view
 	$(LN) /www/resources/view/qmodem $(1)/www/luci-static/resources/view/qmodem
 	$(LN) /www/resources/qmodem $(1)/www/luci-static/resources/qmodem
-	$(INSTALL_DIR) $(1)/usr/share/qmodem
-	$(INSTALL_DATA) ./files/at_commands_zh.json $(1)/usr/share/qmodem/at_commands_zh.json
 	$(INSTALL_DIR) $(1)/etc/uci-defaults
 	$(INSTALL_BIN) ./files/99-m28c-fixes $(1)/etc/uci-defaults/99-m28c-fixes
 	$(INSTALL_BIN) ./files/99-m28c-defaults $(1)/etc/uci-defaults/99-m28c-defaults
