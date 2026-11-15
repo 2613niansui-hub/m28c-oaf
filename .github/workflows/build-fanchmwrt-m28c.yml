@@ -39,6 +39,10 @@ jobs:
           git clone --depth 1 --branch fanchmwrt-25.12.6 https://github.com/fanchmwrt/fanchmwrt.git fanchm-src
           # 把 FanchmWrt 的上网行为管理相关包复制进来（fwx 内核模块 + fwxd + libfwx_common + fullconenat + 主题）
           cp -r fanchm-src/package/fcm immortalwrt/package/fcm
+          # 关键：fwx 模块需要 FanchmWrt 的内核补丁（给 struct nf_conn 增加 fwx_data / shortcut-fe hook）
+          cp fanchm-src/target/linux/generic/hack-6.12/950-fwx-nf-conn-struct-user-hook.patch immortalwrt/target/linux/generic/hack-6.12/
+          cp fanchm-src/target/linux/generic/hack-6.12/952-net-netfilter-shortcut-fe-hook.patch immortalwrt/target/linux/generic/hack-6.12/
+          ls immortalwrt/target/linux/generic/hack-6.12/ | grep -E '950|952'
           ls immortalwrt/package/fcm
           # 校验 M28C 设备支持
           grep -A3 'Device/widora_mangopi-m28c' immortalwrt/target/linux/rockchip/image/armv8.mk | head -8
@@ -55,6 +59,9 @@ jobs:
           # feeds/packages 自带的 open-app-filter 会被 fwx UI 依赖拉入，需打 -Werror 抑制补丁
           if [ -f feeds/packages/net/open-app-filter/Makefile ]; then
             python3 ../.github/oaf-patch.py feeds/packages/net/open-app-filter/Makefile
+            # 双保险：给内核模块编译命令直接加 KCFLAGS=-Wno-error
+            sed -i 's|M="$(PKG_BUILD_DIR)/oaf/src" modules|M="$(PKG_BUILD_DIR)/oaf/src" KCFLAGS="-Wno-error" modules|' feeds/packages/net/open-app-filter/Makefile
+            grep -n 'KCFLAGS="-Wno-error"' feeds/packages/net/open-app-filter/Makefile || echo 'KCFLAGS patch NOT applied'
           fi
           echo "=== feeds check ==="
           ls feeds/fanchmwrt/luci-app-fwx-dashboard 2>/dev/null | head -3
