@@ -1,0 +1,39 @@
+#!/bin/sh
+# M28C 出厂默认配置（首次启动执行一次）
+# LAN / Wi-Fi / 管理密码 / QModem 拨号 / IPv6 过滤
+
+# 1) LAN 地址 192.168.0.1
+uci -q set network.lan.ipaddr='192.168.0.1'
+uci -q set network.lan.netmask='255.255.255.0'
+uci -q commit network
+
+# 2) Wi-Fi: ZTE F50 / WPA2 / 密码 1234567890
+IDX=0
+while uci -q get "wireless.@wifi-iface[$IDX]" >/dev/null 2>&1; do
+  MODE=$(uci -q get "wireless.@wifi-iface[$IDX].mode")
+  if [ "$MODE" = "ap" ]; then
+    uci -q set "wireless.@wifi-iface[$IDX].ssid='ZTE F50'"
+    uci -q set "wireless.@wifi-iface[$IDX].encryption='psk2'"
+    uci -q set "wireless.@wifi-iface[$IDX].key='1234567890'"
+    uci -q set "wireless.@wifi-iface[$IDX].disabled='0'"
+  fi
+  IDX=$((IDX + 1))
+done
+uci -q commit wireless
+
+# 3) 管理员密码 (LuCI/SSH): qwerty1234
+( sleep 1; echo 'qwerty1234'; sleep 1; echo 'qwerty1234' ) | passwd root >/dev/null 2>&1
+
+# 4) QModem: 拨号条目别名 RM502Q-GL + 自动拨号（若已生成配置节）
+uci -q set qmodem.1_1_2.alias='RM502Q-GL'
+uci -q set qmodem.1_1_2.enable_dial='1'
+uci -q set qmodem.1_1_2.state='enabled'
+uci -q set qmodem.1_1_2.apn='CMNET'
+uci -q set qmodem.1_1_2.pdp_type='ipv4'
+uci -q commit qmodem
+
+# 5) dnsmasq 不返回 AAAA（避免 IPv6 黑洞导致手机"连上无网"）
+uci -q set dhcp.@dnsmasq[0].filter_aaaa='1'
+uci -q commit dhcp
+
+exit 0
