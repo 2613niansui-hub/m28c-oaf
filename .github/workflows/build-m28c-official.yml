@@ -37,11 +37,8 @@ jobs:
         run: |
           git clone --depth 1 --branch v25.12.2 https://github.com/immortalwrt/immortalwrt.git
           git clone --depth 1 --branch fanchmwrt-25.12.6 https://github.com/fanchmwrt/fanchmwrt.git fanchm-src
-          # FanchmWrt 界面/功能：fwx 内核模块 + fwxd + libfwx_common + 主题等
-          cp -r fanchm-src/package/fcm immortalwrt/package/fcm
-          cp fanchm-src/target/linux/generic/hack-6.12/950-fwx-nf-conn-struct-user-hook.patch immortalwrt/target/linux/generic/hack-6.12/
-          cp fanchm-src/target/linux/generic/hack-6.12/952-net-netfilter-shortcut-fe-hook.patch immortalwrt/target/linux/generic/hack-6.12/
-          ls immortalwrt/target/linux/generic/hack-6.12/ | grep -E '950|952'
+          # 重要：不改内核！不复制 fwx 内核补丁（保持内核/官方 kmod 完全兼容）
+          ls immortalwrt/target/linux/generic/hack-6.12/ | grep -E '950|952' && { echo 'ERROR: fwx kernel patch present'; exit 1; } || echo 'kernel patched: NO (official)'
           # M28C 修复/默认配置包
           cp -r .github/m28c-fixes immortalwrt/package/m28c-fixes
           curl -fsSL -o immortalwrt/package/m28c-fixes/files/at_commands_zh.json \
@@ -77,17 +74,12 @@ jobs:
           CONFIG_PACKAGE_luci-compat=y
           CONFIG_PACKAGE_luci-lua-runtime=y
           CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
-          CONFIG_PACKAGE_kmod-fwx=y
-          CONFIG_PACKAGE_libfwx_common=y
-          CONFIG_PACKAGE_fwxd=y
-          CONFIG_PACKAGE_luci-app-fwx-dashboard=y
-          CONFIG_PACKAGE_luci-app-fwx-appfilter=y
-          CONFIG_PACKAGE_luci-app-fwx-feature=y
-          CONFIG_PACKAGE_luci-app-fwx-dashboard-setting=y
-          CONFIG_PACKAGE_luci-app-fwx-fastnat=y
-          CONFIG_PACKAGE_luci-app-fwx-app-center=y
           CONFIG_PACKAGE_luci-theme-fanchmwrt=y
-          CONFIG_PACKAGE_kmod-shortcut-fe=y
+          # 上网行为管理：用官方内核可直接加载的 OAF（替代 fwx，内核零改动）
+          CONFIG_PACKAGE_kmod-oaf=y
+          CONFIG_PACKAGE_appfilter=y
+          CONFIG_PACKAGE_luci-app-appfilter=y
+          CONFIG_PACKAGE_luci-i18n-appfilter-zh-cn=y
           CONFIG_PACKAGE_kmod-fullconenat=y
           CONFIG_PACKAGE_kmod-fullconenat-nft=y
           CONFIG_PACKAGE_luci-app-qmodem-next=y
@@ -164,7 +156,7 @@ jobs:
           echo "=== 内核配置必须保持官方设置（不能被改动） ==="
           grep -E '^CONFIG_KERNEL_WERROR|^CONFIG_KERNEL_DEBUG_INFO_BTF|^CONFIG_KERNEL_FTRACE|^CONFIG_KERNEL_KALLSYMS' .config || true
           if grep -q '^# CONFIG_KERNEL_WERROR is not set' .config; then echo "ERROR: kernel WERROR altered"; exit 1; fi
-          for k in CONFIG_TARGET_rockchip_armv8_DEVICE_widora_mangopi-m28c=y CONFIG_PACKAGE_kmod-fwx=y CONFIG_PACKAGE_fwxd=y CONFIG_PACKAGE_qmodem=y CONFIG_PACKAGE_luci-app-qmodem-next=y CONFIG_PACKAGE_m28c-fixes=y CONFIG_PACKAGE_kmod-tun=y CONFIG_PACKAGE_tailscale=y CONFIG_PACKAGE_vsftpd=y CONFIG_PACKAGE_luci-app-homeproxy=y CONFIG_PACKAGE_sing-box=y CONFIG_TARGET_ROOTFS_PARTSIZE=512 CONFIG_KERNEL_WERROR=y; do
+          for k in CONFIG_TARGET_rockchip_armv8_DEVICE_widora_mangopi-m28c=y CONFIG_PACKAGE_kmod-oaf=y CONFIG_PACKAGE_appfilter=y CONFIG_PACKAGE_qmodem=y CONFIG_PACKAGE_luci-app-qmodem-next=y CONFIG_PACKAGE_m28c-fixes=y CONFIG_PACKAGE_kmod-tun=y CONFIG_PACKAGE_tailscale=y CONFIG_PACKAGE_vsftpd=y CONFIG_PACKAGE_luci-app-homeproxy=y CONFIG_PACKAGE_sing-box=y CONFIG_TARGET_ROOTFS_PARTSIZE=512 CONFIG_KERNEL_WERROR=y; do
             grep -q "^$k" .config && echo "OK $k" || echo "WARN dropped $k"
           done
 
