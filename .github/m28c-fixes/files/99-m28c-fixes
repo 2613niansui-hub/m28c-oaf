@@ -1,0 +1,6 @@
+#!/bin/sh
+# M28C 默认修复：让 dnsmasq 不返回 IPv6(AAAA) 记录，避免 IPv6 黑洞
+# （M28C 内网有 IPv6 地址但 5G 无 IPv6 出口时，手机会优先走 IPv6 导致"连上无网"）
+uci -q set dhcp.@dnsmasq[0].filter_aaaa='1'
+uci -q commit dhcp
+exit 0
