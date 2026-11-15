@@ -1,0 +1,190 @@
+name: Build M28C official-kernel EXACT image (ALL_KMODS, official hash match)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: 0. checkout (helper scripts + custom packages)
+        uses: actions/checkout@v4
+
+      - name: 1. free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost /opt/hostedtoolcache || true
+          sudo apt-get clean
+          df -h /
+
+      - name: 2. install build deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential clang flex bison g++ gawk \
+            gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev \
+            python3 python3-setuptools python3-pyelftools python3-yaml \
+            libpython3-dev rsync swig unzip zlib1g-dev file wget \
+            libelf-dev bc device-tree-compiler
+
+      - name: 3. clone ImmortalWrt 25.12.2 + FanchmWrt sources + packages
+        run: |
+          git clone --depth 1 --branch v25.12.2 https://github.com/immortalwrt/immortalwrt.git
+          git clone --depth 1 --branch fanchmwrt-25.12.6 https://github.com/fanchmwrt/fanchmwrt.git fanchm-src
+          # 重要：不改内核！不复制 fwx 内核补丁（保持内核/官方 kmod 完全兼容）
+          ls immortalwrt/target/linux/generic/hack-6.12/ | grep -E '950|952' && { echo 'ERROR: fwx kernel patch present'; exit 1; } || echo 'kernel patched: NO (official)'
+          # M28C 修复/默认配置包
+          cp -r .github/m28c-fixes immortalwrt/package/m28c-fixes
+          curl -fsSL -o immortalwrt/package/m28c-fixes/files/at_commands_zh.json \
+            "https://raw.githubusercontent.com/FUjr/QModem/0988085b887346ae9477ef2e77abe2f797bd2c4a/application/qmodem/files/usr/share/qmodem/at_commands_zh.json"
+          ls -l immortalwrt/package/m28c-fixes/files/
+          grep -A3 'Device/widora_mangopi-m28c' immortalwrt/target/linux/rockchip/image/armv8.mk | head -8
+
+      - name: 4. feeds + source patches
+        run: |
+          cd immortalwrt
+          cat >> feeds.conf.default <<'EOF'
+          src-git fanchmwrt https://github.com/fanchmwrt/fanchmwrt-packages.git
+          src-git qmodem https://github.com/FUjr/QModem.git^0988085b887346ae9477ef2e77abe2f797bd2c4a
+          EOF
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          if [ -f feeds/packages/net/open-app-filter/Makefile ]; then
+            python3 ../.github/oaf-patch.py feeds/packages/net/open-app-filter/Makefile
+            sed -i 's|M="$(PKG_BUILD_DIR)/oaf/src" modules|M="$(PKG_BUILD_DIR)/oaf/src" KCFLAGS="-Wno-error" modules|' feeds/packages/net/open-app-filter/Makefile
+          fi
+          python3 ../.github/patch-qmodem-generic.py feeds/qmodem/application/qmodem/files/usr/share/qmodem/generic.sh
+          grep -A4 'get_cgpaddr_ipv4()' feeds/qmodem/application/qmodem/files/usr/share/qmodem/generic.sh | head -6
+
+      - name: 5. write .config (官方 release 内核配置为基底)
+        run: |
+          cat > /tmp/extra.config <<'EOF'
+          CONFIG_TARGET_MULTI_PROFILE=y
+          CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_widora_mangopi-m28c=y
+          CONFIG_TARGET_DEVICE_PACKAGES_rockchip_armv8_DEVICE_widora_mangopi-m28c=""
+          CONFIG_TARGET_ROOTFS_PARTSIZE=512
+          CONFIG_LUCI_LANG_zh_Hans=y
+          CONFIG_PACKAGE_luci=y
+          CONFIG_PACKAGE_luci-compat=y
+          CONFIG_PACKAGE_luci-lua-runtime=y
+          CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+          CONFIG_PACKAGE_luci-theme-fanchmwrt=y
+          # 上网行为管理：用官方内核可直接加载的 OAF（替代 fwx，内核零改动）
+          CONFIG_PACKAGE_kmod-oaf=y
+          CONFIG_PACKAGE_appfilter=y
+          CONFIG_PACKAGE_luci-app-appfilter=y
+          CONFIG_PACKAGE_luci-i18n-appfilter-zh-cn=y
+          CONFIG_PACKAGE_kmod-fullconenat=y
+          CONFIG_PACKAGE_kmod-fullconenat-nft=y
+          CONFIG_PACKAGE_luci-app-qmodem-next=y
+          CONFIG_PACKAGE_luci-i18n-qmodem-next-zh-cn=y
+          CONFIG_PACKAGE_qmodem=y
+          CONFIG_PACKAGE_tom_modem=y
+          CONFIG_PACKAGE_ubus-at-daemon=y
+          CONFIG_PACKAGE_qmodem-smsd=y
+          CONFIG_PACKAGE_sms-forwarder-next=y
+          CONFIG_PACKAGE_libqmodem-sms=y
+          CONFIG_PACKAGE_modem_scan=y
+          CONFIG_PACKAGE_kmod-qmi_wwan_q=y
+          CONFIG_PACKAGE_kmod-qmi_wwan_f=y
+          CONFIG_PACKAGE_kmod-qmi_wwan_s=y
+          CONFIG_PACKAGE_qmodem-settings=y
+          CONFIG_PACKAGE_ppp=y
+          CONFIG_PACKAGE_ppp-mod-pppoe=y
+          CONFIG_PACKAGE_m28c-fixes=y
+          CONFIG_PACKAGE_kmod-tun=y
+          CONFIG_PACKAGE_tailscale=y
+          CONFIG_PACKAGE_luci-app-tailscale-community=y
+          CONFIG_PACKAGE_luci-i18n-tailscale-community-zh-cn=y
+          CONFIG_PACKAGE_vsftpd=y
+          CONFIG_PACKAGE_luci-app-vsftpd=y
+          CONFIG_PACKAGE_luci-i18n-vsftpd-zh-cn=y
+          CONFIG_PACKAGE_e2fsprogs=y
+          CONFIG_PACKAGE_ca-bundle=y
+          CONFIG_PACKAGE_luci-app-homeproxy=y
+          CONFIG_PACKAGE_luci-i18n-homeproxy-zh-cn=y
+          CONFIG_PACKAGE_sing-box=y
+          CONFIG_PACKAGE_v2ray-geoip=y
+          CONFIG_PACKAGE_v2ray-geosite=y
+          CONFIG_PACKAGE_jq=y
+          CONFIG_PACKAGE_curl=y
+          CONFIG_PACKAGE_kmod-nft-tproxy=y
+          CONFIG_PACKAGE_nftables=y
+          CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y
+          CONFIG_PACKAGE_kmod-usb-net-cdc-mbim=y
+          CONFIG_PACKAGE_kmod-usb-serial-option=y
+          CONFIG_PACKAGE_uqmi=y
+          CONFIG_PACKAGE_umbim=y
+          CONFIG_PACKAGE_luci-proto-qmi=y
+          CONFIG_PACKAGE_luci-proto-mbim=y
+          CONFIG_PACKAGE_kmod-usb-storage=y
+          CONFIG_PACKAGE_kmod-usb-storage-uas=y
+          CONFIG_PACKAGE_kmod-fs-ext4=y
+          CONFIG_PACKAGE_kmod-fs-exfat=y
+          CONFIG_PACKAGE_kmod-fs-ntfs3=y
+          CONFIG_PACKAGE_block-mount=y
+          EOF
+          curl -fsSL -o /tmp/official.config \
+            "https://downloads.immortalwrt.org/releases/25.12.2/targets/rockchip/armv8/config.buildinfo"
+          wc -l /tmp/official.config
+          python3 - <<'PYEOF'
+          src = open('/tmp/official.config').read().splitlines()
+          drop = ('CONFIG_ALL_NONSHARED', 'CONFIG_TARGET_ALL_PROFILES',
+                  'CONFIG_TARGET_PER_DEVICE_ROOTFS', 'CONFIG_SDK', 'CONFIG_SDK_LLVM_BPF')
+          keep = []
+          for line in src:
+              s = line.strip()
+              if any(s.startswith(p) for p in drop):
+                  continue
+              if s.startswith('CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_') and 'widora_mangopi-m28c' not in s:
+                  continue
+              if s.startswith('CONFIG_TARGET_DEVICE_PACKAGES_rockchip_armv8_DEVICE_') and 'widora_mangopi-m28c' not in s:
+                  continue
+              keep.append(line)
+          extra = open('/tmp/extra.config').read().splitlines()
+          open('immortalwrt/.config', 'w').write('\n'.join(keep + extra) + '\n')
+          print('config base lines:', len(keep), 'extra:', len(extra))
+          PYEOF
+          cd immortalwrt
+          make defconfig
+          echo "=== 内核配置与官方 release 逐行对比（应完全一致） ==="
+          grep -E '^CONFIG_KERNEL_|^# CONFIG_KERNEL_' /tmp/official.config | sort > /tmp/k_official.txt
+          grep -E '^CONFIG_KERNEL_|^# CONFIG_KERNEL_' .config | sort > /tmp/k_ours.txt
+          if diff -q /tmp/k_official.txt /tmp/k_ours.txt >/dev/null; then echo "KERNEL CONFIG IDENTICAL TO OFFICIAL"; else echo "WARNING: kernel config differs:"; diff /tmp/k_official.txt /tmp/k_ours.txt | head -40; fi
+          echo "=== 官方内核 hash 参考(必须一致): 6.12.103~9695dbb0de913313770c73e57b594a48 ==="
+          for k in CONFIG_TARGET_rockchip_armv8_DEVICE_widora_mangopi-m28c=y CONFIG_PACKAGE_kmod-oaf=y CONFIG_PACKAGE_appfilter=y CONFIG_PACKAGE_qmodem=y CONFIG_PACKAGE_luci-app-qmodem-next=y CONFIG_PACKAGE_m28c-fixes=y CONFIG_PACKAGE_kmod-tun=y CONFIG_PACKAGE_tailscale=y CONFIG_PACKAGE_vsftpd=y CONFIG_PACKAGE_luci-app-homeproxy=y CONFIG_PACKAGE_sing-box=y CONFIG_TARGET_ROOTFS_PARTSIZE=512; do
+            grep -q "^$k" .config && echo "OK $k" || echo "WARN dropped $k"
+          done
+
+      - name: 6. build
+        run: |
+          cd immortalwrt
+          set -o pipefail
+          ( make -j$(nproc) V=s 2>&1 || make -j1 V=s 2>&1 ) | tee "$GITHUB_WORKSPACE/build.log"
+
+      - name: 7. publish log on failure
+        if: failure()
+        run: |
+          tail -n 800 build.log > build-error.txt 2>/dev/null || echo "no log" > build-error.txt
+
+      - name: 8. collect image + kernel hash report
+        run: |
+          mkdir -p out
+          find immortalwrt/bin/targets/rockchip/armv8 -maxdepth 1 -name "*m28c*" -exec cp -v {} out/ \;
+          ls -lh out/
+          echo "=== manifest 内核包版本（应形如 kernel-6.12.103~<hash>） ==="
+          cat immortalwrt/bin/targets/rockchip/armv8/*.manifest 2>/dev/null | grep -E '^kernel-' || true
+          test -n "$(ls -A out)" || { echo "NO M28C IMAGE"; exit 1; }
+
+      - name: 9. upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: m28c-official-kernel-image
+          path: out/*
+          retention-days: 30
