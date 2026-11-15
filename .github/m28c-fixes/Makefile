@@ -26,7 +26,7 @@ define Build/Compile
 endef
 
 define Package/m28c-fixes/install
-	$(INSTALL_DIR) $(1)/www/luci-static/resources
+	$(INSTALL_DIR) $(1)/www/luci-static/resources/view
 	$(LN) /www/resources/view/qmodem $(1)/www/luci-static/resources/view/qmodem
 	$(LN) /www/resources/qmodem $(1)/www/luci-static/resources/qmodem
 	$(INSTALL_DIR) $(1)/usr/share/qmodem
