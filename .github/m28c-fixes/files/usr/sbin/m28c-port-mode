@@ -1,0 +1,73 @@
+#!/bin/sh
+# M28C RJ45 网口模式切换
+# 用法:
+#   m28c-port-mode lan                 # LAN 模式：网口归 br-lan（5G CPE，给电脑供网）
+#   m28c-port-mode wan dhcp            # WAN 模式：网口作为 WAN，DHCP 自动获取（接上级路由）
+#   m28c-port-mode wan pppoe USER PASS # WAN 模式：网口作为 WAN，PPPoE 拨号
+# 说明：切换后 Wi-Fi 始终属于 LAN，管理地址保持 192.168.0.1
+
+MODE="${1:-lan}"
+
+dev_idx() {
+  local i=0
+  while uci -q get "network.@device[$i].name" >/dev/null 2>&1; do
+    if [ "$(uci -q get "network.@device[$i].name")" = "br-lan" ]; then
+      echo "$i"; return 0
+    fi
+    i=$((i + 1))
+  done
+  return 1
+}
+
+IDX="$(dev_idx)"
+if [ -z "$IDX" ]; then
+  echo "错误：未找到 br-lan 设备配置" >&2
+  exit 1
+fi
+
+case "$MODE" in
+  lan)
+    # 网口重新加入 br-lan 桥
+    uci -q delete "network.@device[$IDX].ports" 2>/dev/null
+    uci -q add_list "network.@device[$IDX].ports=eth0"
+    uci -q delete network.wan_eth 2>/dev/null
+    uci -q del_list firewall.@zone[1].network=wan_eth 2>/dev/null
+    uci -q commit network
+    uci -q commit firewall
+    uci -q set m28c_port.port.mode='lan' 2>/dev/null
+    uci -q commit m28c_port 2>/dev/null
+    /etc/init.d/network reload >/dev/null 2>&1
+    echo "已切换到 LAN 模式：RJ45 网口 = LAN（电脑插网线即可通过 5G 上网）"
+    ;;
+  wan)
+    PROTO="${2:-dhcp}"
+    USER="${3:-}"
+    PASS="${4:-}"
+    # 从 br-lan 移除网口（Wi-Fi 仍在 LAN）
+    uci -q delete "network.@device[$IDX].ports" 2>/dev/null
+    # 创建/更新 WAN 接口
+    uci -q delete network.wan_eth 2>/dev/null
+    uci -q set network.wan_eth='interface'
+    uci -q set network.wan_eth.proto="$PROTO"
+    uci -q set network.wan_eth.device='eth0'
+    uci -q set network.wan_eth.metric='10'
+    uci -q set network.wan_eth.defaultroute='1'
+    if [ "$PROTO" = "pppoe" ]; then
+      uci -q set network.wan_eth.username="$USER"
+      uci -q set network.wan_eth.password="$PASS"
+      uci -q set network.wan_eth.ipv6='0'
+    fi
+    uci -q add_list firewall.@zone[1].network=wan_eth 2>/dev/null
+    uci -q commit network
+    uci -q commit firewall
+    uci -q set m28c_port.port.mode='wan' 2>/dev/null
+    uci -q set m28c_port.port.wanproto="$PROTO" 2>/dev/null
+    uci -q commit m28c_port 2>/dev/null
+    /etc/init.d/network reload >/dev/null 2>&1
+    echo "已切换到 WAN 模式：RJ45 网口 = WAN（$PROTO，优先级高于 5G）"
+    ;;
+  *)
+    echo "用法: $0 lan | $0 wan [dhcp|pppoe] [用户名] [密码]" >&2
+    exit 1
+    ;;
+esac
