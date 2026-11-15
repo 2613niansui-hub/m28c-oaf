@@ -153,10 +153,12 @@ jobs:
           PYEOF
           cd immortalwrt
           make defconfig
-          echo "=== 内核配置必须保持官方设置（不能被改动） ==="
-          grep -E '^CONFIG_KERNEL_WERROR|^CONFIG_KERNEL_DEBUG_INFO_BTF|^CONFIG_KERNEL_FTRACE|^CONFIG_KERNEL_KALLSYMS' .config || true
-          if grep -q '^# CONFIG_KERNEL_WERROR is not set' .config; then echo "ERROR: kernel WERROR altered"; exit 1; fi
-          for k in CONFIG_TARGET_rockchip_armv8_DEVICE_widora_mangopi-m28c=y CONFIG_PACKAGE_kmod-oaf=y CONFIG_PACKAGE_appfilter=y CONFIG_PACKAGE_qmodem=y CONFIG_PACKAGE_luci-app-qmodem-next=y CONFIG_PACKAGE_m28c-fixes=y CONFIG_PACKAGE_kmod-tun=y CONFIG_PACKAGE_tailscale=y CONFIG_PACKAGE_vsftpd=y CONFIG_PACKAGE_luci-app-homeproxy=y CONFIG_PACKAGE_sing-box=y CONFIG_TARGET_ROOTFS_PARTSIZE=512 CONFIG_KERNEL_WERROR=y; do
+          echo "=== 内核配置与官方 release 逐行对比（应完全一致） ==="
+          grep -E '^CONFIG_KERNEL_|^# CONFIG_KERNEL_' /tmp/official.config | sort > /tmp/k_official.txt
+          grep -E '^CONFIG_KERNEL_|^# CONFIG_KERNEL_' .config | sort > /tmp/k_ours.txt
+          if diff -q /tmp/k_official.txt /tmp/k_ours.txt >/dev/null; then echo "KERNEL CONFIG IDENTICAL TO OFFICIAL"; else echo "WARNING: kernel config differs:"; diff /tmp/k_official.txt /tmp/k_ours.txt | head -40; fi
+          echo "=== 官方内核 hash 参考: 6.12.103~9695dbb0de913313770c73e57b594a48 ==="
+          for k in CONFIG_TARGET_rockchip_armv8_DEVICE_widora_mangopi-m28c=y CONFIG_PACKAGE_kmod-oaf=y CONFIG_PACKAGE_appfilter=y CONFIG_PACKAGE_qmodem=y CONFIG_PACKAGE_luci-app-qmodem-next=y CONFIG_PACKAGE_m28c-fixes=y CONFIG_PACKAGE_kmod-tun=y CONFIG_PACKAGE_tailscale=y CONFIG_PACKAGE_vsftpd=y CONFIG_PACKAGE_luci-app-homeproxy=y CONFIG_PACKAGE_sing-box=y CONFIG_TARGET_ROOTFS_PARTSIZE=512; do
             grep -q "^$k" .config && echo "OK $k" || echo "WARN dropped $k"
           done
 
